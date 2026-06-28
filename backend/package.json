@@ -1,0 +1,41 @@
+{
+  "name": "jebil-backend",
+  "version": "1.0.0",
+  "description": "API inicial do sistema de fluxo de oficina da Jebil.",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test",
+    "db:create": "node src/database/createDatabase.js",
+    "db:migrate": "knex migrate:latest --knexfile knexfile.js",
+    "db:migrate:rollback": "knex migrate:rollback --knexfile knexfile.js",
+    "db:seed": "knex seed:run --knexfile knexfile.js",
+    "db:status": "knex migrate:status --knexfile knexfile.js"
+  },
+  "keywords": [
+    "jebil",
+    "express",
+    "oficina"
+  ],
+  "author": "InovaScript Solucoes em Tecnologia",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "knex": "^3.1.0",
+    "multer": "^2.2.0",
+    "mysql2": "^3.15.3",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10",
+    "supertest": "^7.2.2"
+  }
+}

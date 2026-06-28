@@ -1,0 +1,26 @@
+<svg width="720" height="720" viewBox="0 0 720 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="accent" x1="176" y1="112" x2="544" y2="608" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFBC6A"/>
+      <stop offset="1" stop-color="#FF8616"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="112" y1="92" x2="612" y2="636" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16233F"/>
+      <stop offset="1" stop-color="#081327"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="720" height="720" rx="180" fill="#081121"/>
+  <rect x="74" y="74" width="572" height="572" rx="160" fill="url(#panel)" stroke="rgba(255,255,255,0.10)"/>
+
+  <circle cx="360" cy="260" r="126" fill="url(#accent)"/>
+  <path d="M296 300V212H360C398 212 424 232 424 264C424 300 398 320 360 320H330V388H296V300ZM330 290H356C378 290 390 281 390 264C390 248 378 240 356 240H330V290Z" fill="#0C1426"/>
+  <path d="M431 212H465V388H431V212Z" fill="#0C1426"/>
+  <path d="M257 468H463" stroke="url(#accent)" stroke-width="16" stroke-linecap="round"/>
+  <text x="360" y="522" text-anchor="middle" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="68" font-weight="800" letter-spacing="3">
+    JEBIL MOTOS
+  </text>
+  <text x="360" y="582" text-anchor="middle" fill="#8FA7C8" font-family="Arial, Helvetica, sans-serif" font-size="36" font-weight="700" letter-spacing="7">
+    PREPARACOES
+  </text>
+</svg>

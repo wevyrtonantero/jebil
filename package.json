@@ -1,0 +1,22 @@
+{
+  "name": "jebil",
+  "version": "1.0.0",
+  "description": "Sistema de fluxo de oficina da Jebil Motos Preparacoes.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev:backend": "powershell -ExecutionPolicy Bypass -File ./scripts/start-mysql-dev.ps1 && npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "test": "echo \"Use os testes das partes implementadas.\""
+  },
+  "keywords": [
+    "jebil",
+    "oficina"
+  ],
+  "author": "InovaScript Solucoes em Tecnologia",
+  "license": "ISC",
+  "type": "commonjs"
+}
