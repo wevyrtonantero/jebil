@@ -1599,7 +1599,7 @@ function OrcamentistaV2Page() {
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         closeOnBackdrop={false}
-        title={selectedOrder ? selectedOrder.cliente_nome : "Orcamento V2"}
+        title={selectedOrder ? selectedOrder.cliente_nome : "Orcamento"}
         subtitle={
           selectedOrder
             ? `${selectedOrder.motocicleta_placa || "Sem placa"} - ${selectedOrder.motocicleta_modelo || "Sem modelo"} - ${selectedOrder.motocicleta_cor || "Sem cor"}`

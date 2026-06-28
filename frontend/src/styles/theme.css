@@ -544,6 +544,11 @@
   overflow: hidden;
 }
 
+.photo-route-shell {
+  min-height: 100vh;
+  padding: 28px 28px 34px;
+}
+
 .app-shell-menu-hidden {
   grid-template-columns: 0 1fr;
 }
@@ -3636,7 +3641,9 @@
 }
 
 .foto-flow-page {
+  width: min(980px, 100%);
   max-width: 980px;
+  margin: 0 auto;
 }
 
 .foto-flow-hero {
@@ -4185,6 +4192,10 @@
 }
 
 @media (max-width: 720px) {
+  .photo-route-shell {
+    padding: 18px 18px 24px;
+  }
+
   .orcamento-overview-grid {
     grid-template-columns: 1fr;
   }

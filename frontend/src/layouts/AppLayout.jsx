@@ -16,6 +16,7 @@ function AppLayout() {
   const canUsePainelClientes = ["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"].includes(user?.perfil);
   const isTvRoute = location.pathname === "/oficina";
   const isImmersiveOperationRoute = location.pathname === "/v2/operacao";
+  const isPhotoCaptureRoute = location.pathname === "/recepcao/fotos";
   const roleLabel = {
     ADMIN: "Administrador",
     RECEPCAO: "Recepcao",
@@ -28,9 +29,9 @@ function AppLayout() {
     { to: "/recepcao", label: "Recepcao", icon: "reception", show: canUseRecepcao },
     { to: "/recepcao/fotos", label: "Fotos", icon: "camera", show: canUseRecepcao },
     { to: "/oficina", label: "Oficina", icon: "workshop", show: canUseOficina },
-    { to: "/v2/operacao", label: "Operacao V2", icon: "workshop", show: canUseOperacaoV2 },
+    { to: "/v2/operacao", label: "Operacao", icon: "workshop", show: canUseOperacaoV2 },
     { to: "/v2/orcamentos", label: "Orcamentos", icon: "money", show: canUseOrcamentosV2 },
-    { to: "/v2/prontuario", label: "Prontuario V2", icon: "motorcycle", show: canUseProntuarioV2 },
+    { to: "/v2/prontuario", label: "Prontuario", icon: "motorcycle", show: canUseProntuarioV2 },
     { to: "/mecanicos", label: "Mecanicos", icon: "mechanic", show: isAdmin },
     { to: "/clientes", label: "Clientes", icon: "clients", show: canUseRecepcao },
     { to: "/senhas", label: "Senhas", icon: "settings", show: Boolean(user) },
@@ -42,9 +43,9 @@ function AppLayout() {
       .find((item) => location.pathname.startsWith(item.to) && item.to !== "/dashboard")?.label ||
     "Sistema";
 
-  if (isTvRoute || isImmersiveOperationRoute) {
+  if (isTvRoute || isImmersiveOperationRoute || isPhotoCaptureRoute) {
     return (
-      <main className="tv-route-shell">
+      <main className={isPhotoCaptureRoute ? "photo-route-shell" : "tv-route-shell"}>
         <Outlet />
       </main>
     );
