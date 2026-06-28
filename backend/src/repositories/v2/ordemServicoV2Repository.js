@@ -8,6 +8,7 @@ function baseSelect(trx = db) {
     .select(
       "ordens_servico.*",
       "clientes.nome as cliente_nome",
+      "clientes.cpf as cliente_cpf",
       "clientes.telefone as cliente_telefone",
       "motocicletas.marca as motocicleta_marca",
       "motocicletas.modelo as motocicleta_modelo",
@@ -83,7 +84,7 @@ async function listByMotocicletaId(motocicletaId, trx = db) {
 async function findActiveByMotocicletaId(motocicletaId, trx = db) {
   return baseSelect(trx)
     .where("ordens_servico.motocicleta_id", motocicletaId)
-    .whereNotIn("ordens_servico.status_geral", ["FINALIZADA", "ARQUIVADA", "CANCELADA"])
+    .whereNotIn("ordens_servico.status_geral", ["PRONTA_PARA_RETIRADA", "FINALIZADA", "ARQUIVADA", "CANCELADA"])
     .orderBy("ordens_servico.aberta_em", "desc")
     .orderBy("ordens_servico.id", "desc")
     .first();

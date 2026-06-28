@@ -14,12 +14,53 @@ function getItensPlanejados(ordem) {
   return (ordem.items || []).filter((item) => item.descricao && item.descricao !== "Diagnostico inicial");
 }
 
+function parseSystemDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "number") {
+    const dateFromNumber = new Date(value);
+    return Number.isNaN(dateFromNumber.getTime()) ? null : dateFromNumber;
+  }
+
+  const normalizedValue = String(value).trim();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const match = normalizedValue.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})?$/i,
+  );
+
+  if (match) {
+    const [, year, month, day, hours = "00", minutes = "00", seconds = "00"] = match;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours),
+      Number(minutes),
+      Number(seconds),
+      0,
+    );
+  }
+
+  const fallbackDate = new Date(normalizedValue);
+  return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+}
+
 function getActivePartPreviews(ordem) {
   return (ordem.previsoes_pecas || [])
     .filter((previsao) => previsao.status_previsao === "ATIVA")
     .sort((left, right) => {
-      const leftTs = left.previsao_chegada ? new Date(left.previsao_chegada).getTime() : Number.MAX_SAFE_INTEGER;
-      const rightTs = right.previsao_chegada ? new Date(right.previsao_chegada).getTime() : Number.MAX_SAFE_INTEGER;
+      const leftTs = parseSystemDate(left.previsao_chegada)?.getTime() || Number.MAX_SAFE_INTEGER;
+      const rightTs = parseSystemDate(right.previsao_chegada)?.getTime() || Number.MAX_SAFE_INTEGER;
       return leftTs - rightTs;
     });
 }
@@ -29,9 +70,9 @@ function formatDateTimeLabel(value = "") {
     return "Sem previsao";
   }
 
-  const date = new Date(value);
+  const date = parseSystemDate(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (!date || Number.isNaN(date.getTime())) {
     return "Sem previsao";
   }
 
@@ -48,9 +89,9 @@ function formatCountdown(value = "", nowTs) {
     return "Sem contagem";
   }
 
-  const targetTs = new Date(value).getTime();
+  const targetTs = parseSystemDate(value)?.getTime();
 
-  if (Number.isNaN(targetTs)) {
+  if (!targetTs || Number.isNaN(targetTs)) {
     return "Sem contagem";
   }
 
@@ -103,18 +144,9 @@ function isAtendimentoPrioritario(ordem) {
 }
 
 function isAguardandoAutorizacao(ordem) {
-  if (["EM_ORCAMENTO", "AGUARDANDO_CLIENTE"].includes(ordem.status_geral)) {
-    return true;
-  }
-
-  const latestDiagnostico = [...(ordem.diagnosticos || [])].sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
   const latestOrcamento = [...(ordem.orcamentos || [])].sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
-
-  return (
-    ordem.status_geral === "ARQUIVADA" &&
-    latestDiagnostico?.status_diagnostico === "CONCLUIDO" &&
-    ["RASCUNHO", "PENDENTE_ENVIO", "ENVIADO", "PARCIAL"].includes(latestOrcamento?.status_orcamento || "RASCUNHO")
-  );
+  const hasWaitingAuthorizationItem = (ordem.items || []).some((item) => item.status_item === "AGUARDANDO_AUTORIZACAO");
+  return hasWaitingAuthorizationItem && ["RASCUNHO", "PENDENTE_ENVIO", "ENVIADO", "PARCIAL"].includes(latestOrcamento?.status_orcamento || "RASCUNHO");
 }
 
 function OficinaAdminPage() {
@@ -157,46 +189,59 @@ function OficinaAdminPage() {
     [ordens],
   );
 
-  const filaAtendimento = useMemo(
+  const aguardandoDiagnosticoIds = useMemo(() => new Set(aguardandoDiagnostico.map((ordem) => ordem.id)), [aguardandoDiagnostico]);
+
+  const aguardandoPecas = useMemo(
+    () =>
+      ordens.filter(
+        (ordem) => podeEntrarNaOficina(ordem) && !aguardandoDiagnosticoIds.has(ordem.id) && (ordem.items || []).some((item) => item.status_item === "AGUARDANDO_PECA"),
+      ),
+    [aguardandoDiagnosticoIds, ordens],
+  );
+
+  const aguardandoPecasIds = useMemo(() => new Set(aguardandoPecas.map((ordem) => ordem.id)), [aguardandoPecas]);
+
+  const aguardandoAutorizacao = useMemo(
     () =>
       ordens.filter(
         (ordem) =>
           podeEntrarNaOficina(ordem) &&
-          !isAguardandoDiagnostico(ordem) &&
-          !(ordem.items || []).some((item) => item.status_item === "AGUARDANDO_PECA") &&
-          (ordem.items || []).some((item) => item.status_item === "PRONTO_PARA_EXECUTAR"),
+          !aguardandoDiagnosticoIds.has(ordem.id) &&
+          !aguardandoPecasIds.has(ordem.id) &&
+          isAguardandoAutorizacao(ordem),
       ),
-    [ordens],
+    [aguardandoDiagnosticoIds, aguardandoPecasIds, ordens],
   );
 
-  const aguardandoPecas = useMemo(
-    () => ordens.filter((ordem) => (ordem.items || []).some((item) => item.status_item === "AGUARDANDO_PECA")),
-    [ordens],
-  );
-
-  const aguardandoAutorizacao = useMemo(
-    () => ordens.filter((ordem) => isAguardandoAutorizacao(ordem)),
-    [ordens],
-  );
+  const aguardandoAutorizacaoIds = useMemo(() => new Set(aguardandoAutorizacao.map((ordem) => ordem.id)), [aguardandoAutorizacao]);
 
   const motosEmExecucao = useMemo(
     () =>
       ordens.filter(
         (ordem) =>
-          !(ordem.items || []).some((item) => item.status_item === "AGUARDANDO_PECA") &&
+          podeEntrarNaOficina(ordem) &&
+          !aguardandoDiagnosticoIds.has(ordem.id) &&
+          !aguardandoPecasIds.has(ordem.id) &&
+          !aguardandoAutorizacaoIds.has(ordem.id) &&
           (ordem.items || []).some((item) => item.status_item === "EM_EXECUCAO"),
       ),
-    [ordens],
+    [aguardandoAutorizacaoIds, aguardandoDiagnosticoIds, aguardandoPecasIds, ordens],
   );
 
-  const motosProntas = useMemo(
-    () => ordens.filter((ordem) => ordem.status_geral === "PRONTA_PARA_RETIRADA"),
-    [ordens],
-  );
+  const motosEmExecucaoIds = useMemo(() => new Set(motosEmExecucao.map((ordem) => ordem.id)), [motosEmExecucao]);
 
-  const motosProntasVisiveis = useMemo(
-    () => motosProntas.slice(0, 3),
-    [motosProntas],
+  const filaAtendimento = useMemo(
+    () =>
+      ordens.filter(
+        (ordem) =>
+          podeEntrarNaOficina(ordem) &&
+          !aguardandoDiagnosticoIds.has(ordem.id) &&
+          !aguardandoPecasIds.has(ordem.id) &&
+          !aguardandoAutorizacaoIds.has(ordem.id) &&
+          !motosEmExecucaoIds.has(ordem.id) &&
+          (ordem.items || []).some((item) => item.status_item === "PRONTO_PARA_EXECUTAR"),
+      ),
+    [aguardandoAutorizacaoIds, aguardandoDiagnosticoIds, aguardandoPecasIds, motosEmExecucaoIds, ordens],
   );
 
   return (
@@ -407,33 +452,6 @@ function OficinaAdminPage() {
               </article>
             ))}
             {motosEmExecucao.length === 0 ? <div className="empty-state">Nenhuma moto em execucao agora.</div> : null}
-          </div>
-        </div>
-
-        <div className="board-column workshop-prontas-column">
-          <div className="board-title">
-            <div>
-              <h2>Motos prontas</h2>
-            </div>
-            <div className="queue-summary">
-              <span className="summary-pill strong">{motosProntasVisiveis.length}</span>
-            </div>
-          </div>
-
-          <div className="office-ready-list">
-            {motosProntasVisiveis.map((ordem) => (
-              <article className="ready-line-item office-ready-item" key={ordem.id}>
-                <div>
-                  <strong>{getNomeCurto(ordem.cliente_nome)}</strong>
-                  <p>
-                    {ordem.motocicleta_modelo}
-                    {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
-                  </p>
-                </div>
-                {isAtendimentoPrioritario(ordem) ? <span className="office-priority-pill">Prioritario</span> : null}
-              </article>
-            ))}
-            {motosProntasVisiveis.length === 0 ? <div className="empty-state">Nenhuma moto pronta no momento.</div> : null}
           </div>
         </div>
       </div>

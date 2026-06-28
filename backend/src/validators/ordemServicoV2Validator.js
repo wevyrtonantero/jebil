@@ -13,6 +13,10 @@ const allowedAutorizacoes = new Set(autorizacaoStatusV2);
 const allowedPagamentos = new Set(pagamentoStatusV2);
 const allowedItemStatuses = new Set(itemStatusV2);
 
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
 function validateCreateOrdemServicoV2Payload(payload) {
   const clienteId = Number(payload.cliente_id);
   const motocicletaId = Number(payload.motocicleta_id);
@@ -61,6 +65,15 @@ function validateCreateOrdemServicoV2Payload(payload) {
     const autorizacaoStatus = String(item.autorizacao_status || "AGUARDANDO_RESPOSTA").trim().toUpperCase();
     const pagamentoStatus = String(item.pagamento_status || "PENDENTE").trim().toUpperCase();
     const prioridade = String(item.prioridade || "NORMAL").trim().toUpperCase();
+    const quantidade = item.quantidade === undefined || item.quantidade === null || item.quantidade === ""
+      ? 1
+      : Number(item.quantidade);
+    const valorUnitario = item.valor_unitario === undefined || item.valor_unitario === null || item.valor_unitario === ""
+      ? 0
+      : Number(item.valor_unitario);
+    const valorTotalInformado = item.valor_total === undefined || item.valor_total === null || item.valor_total === ""
+      ? null
+      : Number(item.valor_total);
     const itemDataPrometida = item.data_prometida ? String(item.data_prometida).trim() : null;
     const previsaoPecaAtual = item.previsao_peca_atual ? String(item.previsao_peca_atual).trim() : null;
     const observacoes = item.observacoes ? String(item.observacoes).trim() : null;
@@ -86,6 +99,18 @@ function validateCreateOrdemServicoV2Payload(payload) {
       throw new ApiError(400, `prioridade invalida no item ${index + 1}.`);
     }
 
+    if (!Number.isFinite(quantidade) || quantidade <= 0) {
+      throw new ApiError(400, `quantidade invalida no item ${index + 1}.`);
+    }
+
+    if (!Number.isFinite(valorUnitario) || valorUnitario < 0) {
+      throw new ApiError(400, `valor_unitario invalido no item ${index + 1}.`);
+    }
+
+    if (valorTotalInformado !== null && (!Number.isFinite(valorTotalInformado) || valorTotalInformado < 0)) {
+      throw new ApiError(400, `valor_total invalido no item ${index + 1}.`);
+    }
+
     return {
       descricao,
       categoria,
@@ -96,6 +121,9 @@ function validateCreateOrdemServicoV2Payload(payload) {
       autorizacaoStatus,
       pagamentoStatus,
       prioridade,
+      quantidade,
+      valorUnitario: roundMoney(valorUnitario),
+      valorTotal: roundMoney(valorTotalInformado ?? quantidade * valorUnitario),
       dataPrometida: itemDataPrometida,
       previsaoPecaAtual,
       observacoes,

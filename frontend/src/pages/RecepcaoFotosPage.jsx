@@ -46,12 +46,27 @@ function RecepcaoFotosPage() {
 
     if (ordem) {
       openPhotoFlow(ordem);
+      setSearchParams({}, { replace: true });
     }
-  }, [ordensPendentes, searchParams, selectedOrder]);
+  }, [ordensPendentes, searchParams, selectedOrder, setSearchParams]);
+
+  function closePhotoFlow() {
+    setSelectedOrder(null);
+    setPendingFiles([]);
+    setFeedback("");
+
+    if (searchParams.get("ordemId")) {
+      setSearchParams({}, { replace: true });
+    }
+  }
 
   function openPhotoFlow(ordem) {
     setSelectedOrder(ordem);
     setPendingFiles([]);
+    setFeedback("");
+  }
+
+  function handleOpenSystemPhotos() {
     setFeedback("");
     window.setTimeout(() => {
       photoInputRef.current?.click();
@@ -124,50 +139,20 @@ function RecepcaoFotosPage() {
     setFeedback("");
 
     try {
-      let ordemAtual = selectedOrder;
+      const mensagemPreparada = buildClienteWhatsappMessage(selectedOrder);
 
-      if (pendingFiles.length) {
-        const bundle = await uploadFotosEntradaV2(selectedOrder.id, pendingFiles);
-        ordemAtual = {
-          ...selectedOrder,
-          fotos_entrada_count: bundle.fotos_entrada?.length || selectedOrder.fotos_entrada_count || 0,
-        };
-        setSelectedOrder(ordemAtual);
-        setPendingFiles([]);
-        await loadOrdens();
-      }
-
-      const mensagemPreparada = buildClienteWhatsappMessage(ordemAtual);
-      const filesToShare = [...pendingFiles];
-
-      await registrarComunicacaoWhatsAppV2(ordemAtual.id, {
+      await registrarComunicacaoWhatsAppV2(selectedOrder.id, {
         tipo_comunicacao: "RECEPCAO_CLIENTE",
-        destinatario: ordemAtual.cliente_telefone,
+        destinatario: selectedOrder.cliente_telefone,
         finalidade: "Envio de fotos da moto no ato da entrega.",
         mensagem_preparada: mensagemPreparada,
         status_registro: "WHATSAPP_ABERTO",
       });
 
-      const canUseNativeShare =
-        filesToShare.length > 0 &&
-        typeof navigator !== "undefined" &&
-        typeof navigator.share === "function" &&
-        typeof navigator.canShare === "function" &&
-        navigator.canShare({ files: filesToShare });
+      const digits = String(selectedOrder.cliente_telefone || "").replace(/\D/g, "");
 
-      if (canUseNativeShare) {
-        await navigator.share({
-          text: mensagemPreparada,
-          files: filesToShare,
-          title: `Fotos da moto - ${ordemAtual.cliente_nome}`,
-        });
-        setFeedback("Compartilhamento aberto. Escolha o WhatsApp no celular para enviar as fotos e a mensagem.");
-      } else {
-        const digits = String(ordemAtual.cliente_telefone || "").replace(/\D/g, "");
-
-        window.open(`https://wa.me/55${digits}?text=${encodeURIComponent(mensagemPreparada)}`, "_blank", "noopener,noreferrer");
-        setFeedback("WhatsApp aberto com a mensagem pronta. As fotos podem precisar ser anexadas manualmente no aparelho.");
-      }
+      window.open(`https://wa.me/55${digits}?text=${encodeURIComponent(mensagemPreparada)}`, "_blank", "noopener,noreferrer");
+      setFeedback("WhatsApp aberto com a mensagem pronta. Tire e envie as fotos por la, depois volte para registrar as fotos da OS no sistema.");
     } catch (requestError) {
       if (requestError?.name === "AbortError") {
         setFeedback("Compartilhamento cancelado.");
@@ -248,22 +233,21 @@ function RecepcaoFotosPage() {
 
       <Modal
         open={Boolean(selectedOrder)}
-        onClose={() => !busy && setSelectedOrder(null)}
+        onClose={() => !busy && closePhotoFlow()}
         title={selectedOrder?.cliente_nome || "Registrar fotos"}
         subtitle={selectedOrder ? `${selectedOrder.motocicleta_placa || "Sem placa"} · ${selectedOrder.motocicleta_modelo}` : ""}
         actions={
           <>
-            <button type="button" className="ghost-button" onClick={() => setSelectedOrder(null)} disabled={busy}>
+            <button type="button" className="ghost-button" onClick={closePhotoFlow} disabled={busy}>
+              <AppIcon name="close" size={16} />
               Fechar
             </button>
-            <button type="button" className="ghost-button recepcao-whatsapp-action" onClick={handleWhatsAppCliente} disabled={busy}>
-              <AppIcon name="whatsapp" size={18} />
-              WhatsApp cliente
-            </button>
             <button type="button" className="ghost-button" onClick={handleFinalizarCadastro} disabled={busy}>
+              <AppIcon name="check" size={16} />
               Finalizar cadastro
             </button>
             <button type="button" className="primary-button" onClick={handleEnviarFotos} disabled={busy || !pendingFiles.length}>
+              <AppIcon name="send" size={16} />
               {busy ? "Enviando..." : "Enviar fotos"}
             </button>
           </>
@@ -282,17 +266,36 @@ function RecepcaoFotosPage() {
           }}
         />
 
-        <button type="button" className="photo-capture-button photo-capture-button-large" onClick={() => photoInputRef.current?.click()}>
-          <span className="photo-capture-plus">+</span>
-          <span className="photo-capture-copy">
-            <strong>Tirar ou adicionar fotos</strong>
-            <small>Use a camera do celular ou escolha imagens da galeria.</small>
-          </span>
-        </button>
+        <div className="foto-flow-modal-actions">
+          <button type="button" className="foto-flow-modal-action is-whatsapp" onClick={handleWhatsAppCliente} disabled={busy}>
+            <span className="foto-flow-modal-action-icon">
+              <AppIcon name="whatsapp" size={22} />
+            </span>
+            <span className="foto-flow-modal-action-copy">
+              <strong>WhatsApp cliente</strong>
+              <small>Abre a mensagem pronta para voce tirar e enviar as fotos direto no WhatsApp.</small>
+            </span>
+          </button>
+
+          <button type="button" className="foto-flow-modal-action is-camera" onClick={handleOpenSystemPhotos} disabled={busy}>
+            <span className="foto-flow-modal-action-icon">
+              <AppIcon name="camera" size={22} />
+            </span>
+            <span className="foto-flow-modal-action-copy">
+              <strong>Fotos da OS</strong>
+              <small>Depois registre no sistema as fotos internas da entrada da moto.</small>
+            </span>
+          </button>
+        </div>
 
         <div className="detail-row">
           <strong>Situacao atual</strong>
           <p>{selectedOrder ? `${selectedOrder.fotos_entrada_count || 0} foto(s) ja registradas para esta moto.` : ""}</p>
+        </div>
+
+        <div className="detail-row">
+          <strong>Fluxo sugerido</strong>
+          <p>1. Abra o WhatsApp do cliente. 2. Envie as fotos por la. 3. Volte e registre as fotos da OS. 4. Finalize o cadastro.</p>
         </div>
 
         {pendingFiles.length ? (

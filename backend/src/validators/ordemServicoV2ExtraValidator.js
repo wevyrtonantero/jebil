@@ -9,7 +9,14 @@ const allowedWhatsappTypes = new Set([
 
 const allowedWhatsappStatus = new Set(["PREPARADA", "WHATSAPP_ABERTO"]);
 const allowedOrcamentoStatus = new Set(["RASCUNHO", "PENDENTE_ENVIO", "ENVIADO", "APROVADO", "PARCIAL", "RECUSADO", "ARQUIVADO"]);
-const allowedOrcamentoItemAuthStatus = new Set(["AGUARDANDO_RESPOSTA", "AUTORIZADO", "NAO_AUTORIZADO", "PARCIALMENTE_AUTORIZADO", "CANCELADO"]);
+const allowedOrcamentoItemAuthStatus = new Set([
+  "NAO_SE_APLICA",
+  "AGUARDANDO_RESPOSTA",
+  "AUTORIZADO",
+  "NAO_AUTORIZADO",
+  "PARCIALMENTE_AUTORIZADO",
+  "CANCELADO",
+]);
 const allowedStatusDestinoPeca = new Set(["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"]);
 
 function validateRegistrarComunicacaoWhatsAppPayload(payload) {

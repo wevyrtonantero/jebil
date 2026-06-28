@@ -17,6 +17,7 @@ const {
   uploadFotosEntradaV2,
   finalizarCadastroFotosV2,
   registrarComunicacaoWhatsAppV2,
+  confirmarRetiradaV2,
   createOrcamentoV2,
   updateOrcamentoStatusV2,
   registrarPrevisaoPecaV2,
@@ -43,6 +44,7 @@ router.post("/", roleMiddleware(["ADMIN", "RECEPCAO"]), createOrdemServicoV2);
 router.post("/:ordemId/fotos-entrada", roleMiddleware(["ADMIN", "RECEPCAO"]), uploadFotosEntrada.array("fotos"), uploadErrorMiddleware, uploadFotosEntradaV2);
 router.patch("/:ordemId/finalizar-cadastro-fotos", roleMiddleware(["ADMIN", "RECEPCAO"]), finalizarCadastroFotosV2);
 router.post("/:ordemId/comunicacoes-whatsapp", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"]), registrarComunicacaoWhatsAppV2);
+router.patch("/:ordemId/confirmar-retirada", roleMiddleware(["ADMIN", "RECEPCAO"]), confirmarRetiradaV2);
 router.post("/:ordemId/orcamentos", roleMiddleware(["ADMIN", "ORCAMENTISTA"]), createOrcamentoV2);
 router.post("/:ordemId/items/:itemId/execucao", roleMiddleware(["ADMIN", "OFICINA"]), atribuirExecucaoV2);
 router.post("/:ordemId/items/:itemId/previsoes-pecas", roleMiddleware(["ADMIN", "OFICINA"]), registrarPrevisaoPecaV2);

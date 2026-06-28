@@ -8,7 +8,14 @@ import {
   reactivateMotocicleta,
   updateMotocicleta,
 } from "../services/motocicletaService";
-import { createOrdemServicoV2, listItemSuggestionsV2, uploadFotosEntradaV2 } from "../services/ordemServicoV2Service";
+import {
+  confirmarRetiradaV2,
+  createOrdemServicoV2,
+  listItemSuggestionsV2,
+  listOrdensServicoV2,
+  registrarComunicacaoWhatsAppV2,
+  uploadFotosEntradaV2,
+} from "../services/ordemServicoV2Service";
 import Modal from "../components/common/Modal";
 import AppIcon from "../components/common/AppIcon";
 import { brandOptions, getModelOptions } from "../data/motoCatalog";
@@ -16,6 +23,9 @@ import { formatCpf, formatPhone, formatPlate } from "../utils/formatters";
 
 const initialItem = () => ({
   descricao: "",
+  quantidade: "1",
+  valor_unitario: "0.00",
+  valor_total: "0.00",
   pagamento_status: "PENDENTE",
 });
 
@@ -81,9 +91,63 @@ function normalizePlateValue(value) {
     .toUpperCase();
 }
 
+function normalizeCurrencyInput(value) {
+  const normalized = String(value || "").replace(",", ".");
+  return normalized.replace(/[^\d.]/g, "");
+}
+
+function toMoney(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+function calculateItemTotal(quantidade, valorUnitario) {
+  return toMoney(Number(quantidade || 0) * Number(valorUnitario || 0));
+}
+
+function formatReadyTime(value) {
+  if (!value) {
+    return "Agora";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function buildReadyWhatsappMessage(ordem) {
+  const moto = [
+    ordem.motocicleta_marca,
+    ordem.motocicleta_modelo,
+    ordem.motocicleta_ano,
+    ordem.motocicleta_placa,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return [
+    `Ola, ${ordem.cliente_nome}.`,
+    `Sua motocicleta ${moto} esta pronta para retirada.`,
+    "Estamos a disposicao.",
+  ].join("\n");
+}
+
+function resolveWhatsappNumber(value = "") {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.startsWith("55") ? digits : `55${digits}`;
+}
+
 function RecepcaoV2Page() {
   const navigate = useNavigate();
   const photoInputRef = useRef(null);
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [readyOrders, setReadyOrders] = useState([]);
+  const [readyLoading, setReadyLoading] = useState(false);
+  const [readyActionId, setReadyActionId] = useState(null);
+  const [readyFeedback, setReadyFeedback] = useState("");
   const [form, setForm] = useState(createInitialForm);
   const [itemSuggestions, setItemSuggestions] = useState([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -101,6 +165,10 @@ function RecepcaoV2Page() {
 
   const modelosDisponiveis = useMemo(() => getModelOptions(form.marca, form.modelo), [form.marca, form.modelo]);
   const colorFieldTheme = useMemo(() => resolveColorFieldTheme(form.cor), [form.cor]);
+  const totalPrevioItens = useMemo(
+    () => form.items.reduce((total, item) => total + Number(item.valor_total || 0), 0),
+    [form.items],
+  );
 
   function resetForNewOrder() {
     setForm(createInitialForm());
@@ -114,6 +182,84 @@ function RecepcaoV2Page() {
     setSuccessData(null);
     setError("");
     setDuplicateOrderModal({ open: false, message: "", plate: "" });
+    setIntakeOpen(false);
+  }
+
+  async function loadReadyOrders() {
+    setReadyLoading(true);
+
+    try {
+      const data = await listOrdensServicoV2({ status_geral: "PRONTA_PARA_RETIRADA" });
+      setReadyOrders(data.filter((ordem) => !ordem.legado_atendimento_id));
+    } catch {
+      setReadyFeedback("Nao foi possivel carregar as motos aguardando retirada.");
+    } finally {
+      setReadyLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void loadReadyOrders();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  function openNewAttendance() {
+    resetForNewOrder();
+    setReadyFeedback("");
+    setIntakeOpen(true);
+  }
+
+  async function handleNotifyReady(ordem) {
+    if (!ordem.cliente_telefone) {
+      setReadyFeedback("Este cliente nao possui telefone cadastrado.");
+      return;
+    }
+
+    setReadyActionId(ordem.id);
+    setReadyFeedback("");
+
+    try {
+      const mensagemPreparada = buildReadyWhatsappMessage(ordem);
+      await registrarComunicacaoWhatsAppV2(ordem.id, {
+        tipo_comunicacao: "RETIRADA_CLIENTE",
+        destinatario: ordem.cliente_telefone,
+        finalidade: "Aviso de motocicleta pronta para retirada.",
+        mensagem_preparada: mensagemPreparada,
+        status_registro: "WHATSAPP_ABERTO",
+      });
+
+      const whatsappNumber = resolveWhatsappNumber(ordem.cliente_telefone);
+      window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(mensagemPreparada)}`, "_blank", "noopener,noreferrer");
+      setReadyFeedback(`WhatsApp preparado para ${ordem.cliente_nome}.`);
+    } catch (requestError) {
+      setReadyFeedback(requestError?.response?.data?.message || "Nao foi possivel preparar o WhatsApp de retirada.");
+    } finally {
+      setReadyActionId(null);
+    }
+  }
+
+  async function handleConfirmWithdrawal(ordem) {
+    const confirmed = window.confirm(`Confirmar retirada da moto ${ordem.motocicleta_placa || ordem.motocicleta_modelo}?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setReadyActionId(ordem.id);
+    setReadyFeedback("");
+
+    try {
+      await confirmarRetiradaV2(ordem.id);
+      setReadyOrders((current) => current.filter((item) => Number(item.id) !== Number(ordem.id)));
+      setReadyFeedback(`${ordem.cliente_nome} marcado como retirado.`);
+    } catch (requestError) {
+      setReadyFeedback(requestError?.response?.data?.message || "Nao foi possivel confirmar a retirada.");
+    } finally {
+      setReadyActionId(null);
+    }
   }
 
   function buildEnderecoRetirada() {
@@ -199,7 +345,22 @@ function RecepcaoV2Page() {
     setSuccessData(null);
     setForm((current) => ({
       ...current,
-      items: current.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)),
+      items: current.items.map((item, itemIndex) => {
+        if (itemIndex !== index) {
+          return item;
+        }
+
+        const updatedItem = {
+          ...item,
+          [field]: value,
+        };
+
+        if (field === "quantidade" || field === "valor_unitario") {
+          updatedItem.valor_total = calculateItemTotal(updatedItem.quantidade, updatedItem.valor_unitario);
+        }
+
+        return updatedItem;
+      }),
     }));
   }
 
@@ -495,6 +656,9 @@ function RecepcaoV2Page() {
           .filter((item) => item.descricao.trim())
           .map((item) => ({
             descricao: item.descricao,
+            quantidade: Number(item.quantidade || 1),
+            valor_unitario: Number(item.valor_unitario || 0),
+            valor_total: Number(item.valor_total || 0),
             execucao_direta: form.dispensa_queixa_principal,
             exige_diagnostico: !form.dispensa_queixa_principal,
             autorizacao_status: "NAO_SE_APLICA",
@@ -592,6 +756,77 @@ function RecepcaoV2Page() {
         ))}
       </datalist>
 
+      <div className="workspace-card recepcao-desk-panel">
+        <div className="workspace-heading">
+          <div className="title-with-icon">
+            <span className="title-icon">
+              <AppIcon name="reception" />
+            </span>
+            <div>
+              <p className="eyebrow">Recepcao</p>
+              <h2>Atendimento e retirada</h2>
+            </div>
+          </div>
+          <button type="button" className="primary-button recepcao-new-attendance-button" onClick={openNewAttendance}>
+            <AppIcon name="plus" size={18} />
+            Novo atendimento
+          </button>
+        </div>
+
+        <div className="recepcao-ready-section">
+          <div className="workspace-heading compact-heading">
+            <div>
+              <p className="eyebrow">Motos concluidas</p>
+              <h2>Aguardando retirada</h2>
+            </div>
+            <span className="summary-pill strong">{readyOrders.length}</span>
+          </div>
+
+          <div className="recepcao-ready-list">
+            {readyOrders.map((ordem) => (
+              <article className="recepcao-ready-card" key={ordem.id}>
+                <div>
+                  <strong>{ordem.cliente_nome}</strong>
+                  <p>
+                    {ordem.motocicleta_modelo}
+                    {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
+                  </p>
+                  <small>Pronta desde {formatReadyTime(ordem.pronta_retirada_em || ordem.atualizado_em)}</small>
+                </div>
+                <div className="recepcao-ready-actions">
+                  <button
+                    type="button"
+                    className="icon-button recepcao-whatsapp-action"
+                    onClick={() => void handleNotifyReady(ordem)}
+                    disabled={readyActionId === ordem.id}
+                    aria-label="Avisar cliente pelo WhatsApp"
+                    title="Avisar cliente pelo WhatsApp"
+                  >
+                    <AppIcon name="whatsapp" size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button ready-withdraw-button"
+                    onClick={() => void handleConfirmWithdrawal(ordem)}
+                    disabled={readyActionId === ordem.id}
+                    aria-label="Confirmar retirada"
+                    title="Confirmar retirada"
+                  >
+                    <AppIcon name="check" size={18} />
+                  </button>
+                </div>
+              </article>
+            ))}
+
+            {!readyLoading && readyOrders.length === 0 ? <div className="empty-state">Nenhuma moto aguardando retirada.</div> : null}
+            {readyLoading ? <div className="empty-state">Carregando retiradas...</div> : null}
+          </div>
+
+          {readyFeedback ? <p className="field-note">{readyFeedback}</p> : null}
+        </div>
+      </div>
+
+      {intakeOpen ? (
       <div className="workspace-grid recepcao-form-grid">
         <form className="workspace-card recepcao-form-card" onSubmit={handleOpenConfirm}>
           <div className="workspace-heading">
@@ -726,7 +961,7 @@ function RecepcaoV2Page() {
               <p className="eyebrow">Servicos e pecas</p>
               <h2>Lista simples</h2>
               <p className="subtitle">
-                Cada linha recebe apenas o nome do servico ou da peca e o status de pagamento{form.dispensa_queixa_principal ? ". No modo rapido, este bloco continua obrigatorio." : "."}
+                Cada linha recebe descricao, qtd, valor e status de pagamento{form.dispensa_queixa_principal ? ". No modo rapido, este bloco continua obrigatorio." : "."}
               </p>
             </div>
             <button type="button" className="icon-button add-line-toolbar-button" onClick={addItem} aria-label="Adicionar linha" title="Adicionar linha">
@@ -736,7 +971,7 @@ function RecepcaoV2Page() {
 
           <div className="service-list-card">
             {form.items.map((item, index) => (
-              <div className="service-line" key={`item-form-${index}`}>
+              <div className="service-line recepcao-service-line" key={`item-form-${index}`}>
                 <span className="service-line-index">{String(index + 1).padStart(2, "0")}</span>
                 <input
                   className="service-line-input"
@@ -751,8 +986,25 @@ function RecepcaoV2Page() {
                     updateItem(index, "descricao", nextValue);
                     if (!nextValue || nextValue.length >= 2) {
                       void loadItemSuggestions(nextValue).catch(() => {});
-                    }
-                  }}
+                      }
+                    }}
+                />
+                <input
+                  value={item.quantidade}
+                  inputMode="numeric"
+                  placeholder="Qtd"
+                  onChange={(event) => updateItem(index, "quantidade", event.target.value.replace(/\D/g, ""))}
+                />
+                <input
+                  value={item.valor_unitario}
+                  inputMode="decimal"
+                  placeholder="Unit."
+                  onChange={(event) => updateItem(index, "valor_unitario", normalizeCurrencyInput(event.target.value))}
+                />
+                <input
+                  value={item.valor_total}
+                  placeholder="Total"
+                  readOnly
                 />
                 <button
                   type="button"
@@ -776,6 +1028,9 @@ function RecepcaoV2Page() {
               </div>
             ))}
           </div>
+          <p className="field-note">
+            {form.items.filter((item) => item.descricao.trim()).length} item(ns) na lista • Previsao inicial de R$ {toMoney(totalPrevioItens)}
+          </p>
 
           {!form.dispensa_queixa_principal ? (
             <>
@@ -834,6 +1089,7 @@ function RecepcaoV2Page() {
           </div>
         </form>
       </div>
+      ) : null}
 
       <Modal
         open={motoChoiceOpen}
@@ -891,7 +1147,9 @@ function RecepcaoV2Page() {
           </article>
           <article className="detail-row">
             <strong>Itens</strong>
-            <p>{form.items.filter((item) => item.descricao.trim()).length} linha(s)</p>
+            <p>
+              {form.items.filter((item) => item.descricao.trim()).length} linha(s) • R$ {toMoney(totalPrevioItens)}
+            </p>
           </article>
         </div>
       </Modal>

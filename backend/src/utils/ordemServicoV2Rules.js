@@ -91,6 +91,10 @@ function deriveOrdemServicoStatus(items = [], lifecycle = {}) {
     return "CANCELADA";
   }
 
+  if (lifecycle.arquivadaEm) {
+    return "ARQUIVADA";
+  }
+
   if (lifecycle.finalizadaEm) {
     return "FINALIZADA";
   }

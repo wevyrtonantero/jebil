@@ -121,10 +121,17 @@ function normalizeOrderItemOrigin(value) {
   return "SOLICITADO_CLIENTE";
 }
 
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
 function normalizeItems(items, currentUser) {
   return items.map((item) => {
     const autorizacaoStatus = item.autorizacaoStatus || "AGUARDANDO_RESPOSTA";
     const pagamentoStatus = item.pagamentoStatus || "PENDENTE";
+    const quantidade = Number(item.quantidade || 1);
+    const valorUnitario = roundMoney(item.valorUnitario || 0);
+    const valorTotal = roundMoney(item.valorTotal ?? quantidade * valorUnitario);
     const normalized = {
       descricao: String(item.descricao || "").trim(),
       categoria: item.categoria ? String(item.categoria).trim() : null,
@@ -135,6 +142,9 @@ function normalizeItems(items, currentUser) {
       autorizacaoStatus,
       pagamentoStatus,
       prioridade: item.prioridade || "NORMAL",
+      quantidade,
+      valorUnitario,
+      valorTotal,
       dataPrometida: normalizeMySqlDateTime(item.dataPrometida || null),
       previsaoPecaAtual: normalizeMySqlDateTime(item.previsaoPecaAtual || null),
       observacoes: item.observacoes ? String(item.observacoes).trim() : null,
@@ -160,6 +170,9 @@ function buildAutomaticDiagnosticItem(currentUser) {
     autorizacaoStatus: "NAO_SE_APLICA",
     pagamentoStatus: "PENDENTE",
     prioridade: "NORMAL",
+    quantidade: 1,
+    valorUnitario: 0,
+    valorTotal: 0,
     dataPrometida: null,
     previsaoPecaAtual: null,
     observacoes: "Item criado automaticamente a partir da queixa informada na recepcao.",
@@ -186,6 +199,20 @@ function deriveLegacySituacaoPagamento(items = []) {
   }
 
   return items.every((item) => item.pagamentoStatus === "PAGO") ? "PAGO" : "PENDENTE";
+}
+
+function isAtendimentoRapidoOrdem(ordemServico, items = []) {
+  if (ordemServico?.legado_atendimento_id) {
+    return true;
+  }
+
+  const itensValidos = items.filter((item) => item.status_item !== "CANCELADO");
+
+  return (
+    !String(ordemServico?.queixa_principal || "").trim() &&
+    itensValidos.length > 0 &&
+    itensValidos.every((item) => Boolean(item.execucao_direta) && !Boolean(item.exige_diagnostico))
+  );
 }
 
 async function createLegacyQueueEntryForQuickService(trx, payload, currentUser, numeroOs) {
@@ -478,13 +505,18 @@ async function recalculateOrdemServicoAggregate(trx, ordemServicoId, currentUser
   const items = await itemOrdemServicoV2Repository.listByOrdemServicoId(ordemServicoId, trx);
   const ordemServicoAtual = await ordemServicoV2Repository.findById(ordemServicoId, trx);
   const novaPrioridade = derivePrioridadeAgregada(items, ordemServicoAtual.prioridade_agregada);
-  const novoStatus = deriveOrdemServicoStatus(
+  const statusCalculado = deriveOrdemServicoStatus(
     items.map((item) => ({ statusItem: item.status_item })),
     {
       finalizadaEm: ordemServicoAtual.finalizada_em,
+      arquivadaEm: ordemServicoAtual.arquivada_em,
       canceladaEm: ordemServicoAtual.cancelada_em,
     },
   );
+  const novoStatus =
+    statusCalculado === "PRONTA_PARA_RETIRADA" && isAtendimentoRapidoOrdem(ordemServicoAtual, items)
+      ? "ARQUIVADA"
+      : statusCalculado;
 
   const mudouStatus = novoStatus !== ordemServicoAtual.status_geral;
   const mudouPrioridade = novaPrioridade !== ordemServicoAtual.prioridade_agregada;
@@ -500,7 +532,34 @@ async function recalculateOrdemServicoAggregate(trx, ordemServicoId, currentUser
       novoStatus === "PRONTA_PARA_RETIRADA" && !ordemServicoAtual.pronta_retirada_em
         ? db.fn.now()
         : ordemServicoAtual.pronta_retirada_em,
+    arquivada_em:
+      novoStatus === "ARQUIVADA" && !ordemServicoAtual.arquivada_em
+        ? db.fn.now()
+        : ordemServicoAtual.arquivada_em,
   });
+
+  if (novoStatus === "ARQUIVADA" && ordemServicoAtual.legado_atendimento_id) {
+    const atendimento = await atendimentoRepository.findById(ordemServicoAtual.legado_atendimento_id, trx);
+
+    if (atendimento && !["FINALIZADO", "CANCELADO"].includes(atendimento.status)) {
+      await atendimentoRepository.updateFields(trx, atendimento.id, {
+        status: "FINALIZADO",
+        servico_concluido_em: atendimento.servico_concluido_em || db.fn.now(),
+        liberado_retirada_em: atendimento.liberado_retirada_em || db.fn.now(),
+        retirada_confirmada_em: atendimento.retirada_confirmada_em || db.fn.now(),
+        finalizado_em: atendimento.finalizado_em || db.fn.now(),
+      });
+
+      await registrarHistorico(trx, {
+        atendimentoId: atendimento.id,
+        usuarioId: currentUser?.id || null,
+        acao: "RETIRADA_CONFIRMADA",
+        statusAnterior: atendimento.status,
+        statusNovo: "FINALIZADO",
+        observacao: "Atendimento rapido arquivado automaticamente ao concluir a OS V2.",
+      });
+    }
+  }
 
   if (mudouStatus) {
     await appendHistoricoOrdemServico(trx, {
@@ -1061,8 +1120,12 @@ async function getProntuarioByMotocicletaId(motocicletaId) {
     motocicleta_id: motocicletaId,
     cliente_id: ordens[0].cliente_id,
     cliente_nome: ordens[0].cliente_nome,
+    cliente_cpf: ordens[0].cliente_cpf,
+    cliente_telefone: ordens[0].cliente_telefone,
     motocicleta_marca: ordens[0].motocicleta_marca,
     motocicleta_modelo: ordens[0].motocicleta_modelo,
+    motocicleta_ano: ordens[0].motocicleta_ano,
+    motocicleta_cor: ordens[0].motocicleta_cor,
     motocicleta_placa: ordens[0].motocicleta_placa,
     ordens_servico: bundles,
   };
@@ -1191,6 +1254,40 @@ async function registrarComunicacaoWhatsApp(ordemServicoId, payload, currentUser
   });
 }
 
+async function confirmarRetirada(ordemServicoId, currentUser) {
+  const data = await db.transaction(async (trx) => {
+    const ordem = await ordemServicoV2Repository.findById(ordemServicoId, trx);
+
+    if (!ordem) {
+      throw new ApiError(404, "Ordem de servico V2 nao encontrada.");
+    }
+
+    if (ordem.status_geral !== "PRONTA_PARA_RETIRADA") {
+      throw new ApiError(409, "Somente motos prontas para retirada podem ser marcadas como retiradas.");
+    }
+
+    await ordemServicoV2Repository.updateFields(trx, ordemServicoId, {
+      status_geral: "FINALIZADA",
+      retirada_em: ordem.retirada_em || db.fn.now(),
+      finalizada_em: ordem.finalizada_em || db.fn.now(),
+    });
+
+    await appendHistoricoOrdemServico(trx, {
+      ordemServicoId,
+      usuarioId: currentUser.id,
+      acao: "RETIRADA_CONFIRMADA",
+      statusAnterior: ordem.status_geral,
+      statusNovo: "FINALIZADA",
+      observacao: "Retirada confirmada pela recepcao.",
+    });
+
+    return loadOrdemServicoBundle(ordemServicoId, trx);
+  });
+
+  emitV2Updated(ordemServicoId, { tipo: "retirada_confirmada" });
+  return data;
+}
+
 function sumOrcamentoItems(items = []) {
   return items.reduce((acc, item) => acc + Number(item.valorTotal || 0), 0);
 }
@@ -1250,6 +1347,9 @@ async function ensureOrcamentoItemsLinkedToOrder(trx, ordemServicoId, payloadIte
         autorizacaoStatus: item.autorizacaoStatus || "AGUARDANDO_RESPOSTA",
         pagamentoStatus: "PENDENTE",
         prioridade: "NORMAL",
+        quantidade: item.quantidade || 1,
+        valorUnitario: item.valorPeca || 0,
+        valorTotal: item.valorTotal || 0,
         dataPrometida: dataPrometida || null,
         previsaoPecaAtual: null,
         observacoes: item.observacao || null,
@@ -1272,6 +1372,9 @@ async function ensureOrcamentoItemsLinkedToOrder(trx, ordemServicoId, payloadIte
         pagamentoStatus: item.pagamentoStatus,
         statusItem: item.statusItem,
         prioridade: item.prioridade,
+        quantidade: item.quantidade,
+        valorUnitario: item.valorUnitario,
+        valorTotal: item.valorTotal,
         dataPrometida: item.dataPrometida,
         previsaoPecaAtual: item.previsaoPecaAtual,
         observacoes: item.observacoes,
@@ -1419,6 +1522,9 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
           status_orcamento: payload.statusOrcamento || "RASCUNHO",
           observacoes: payload.observacoes || null,
           valor_total: valorTotal,
+          enviado_cliente_em: payload.statusOrcamento === "ENVIADO" ? orcamentoExistente.enviado_cliente_em || db.fn.now() : null,
+          pdf_url: null,
+          arquivado_em: null,
         })
       : await orcamentoV2Repository.insert(trx, {
           ordemServicoId,
@@ -1486,9 +1592,17 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
     };
   });
 
-  const pdfData = await saveGeneratedOrcamentoPdf(data.orcamento.id, currentUser, false);
-  emitV2Updated(ordemServicoId, { tipo: "orcamento_salvo" });
-  return pdfData;
+  try {
+    const pdfData = await saveGeneratedOrcamentoPdf(data.orcamento.id, currentUser, false);
+    emitV2Updated(ordemServicoId, { tipo: "orcamento_salvo" });
+    return pdfData;
+  } catch (error) {
+    emitV2Updated(ordemServicoId, { tipo: "orcamento_salvo" });
+    return {
+      ...data,
+      pdf_warning: "Orcamento salvo, mas nao foi possivel gerar o PDF agora.",
+    };
+  }
 }
 
 async function updateOrcamentoStatus(orcamentoId, payload, currentUser) {
@@ -1503,9 +1617,11 @@ async function updateOrcamentoStatus(orcamentoId, payload, currentUser) {
       status_orcamento: payload.statusOrcamento,
       observacoes: payload.observacoes ?? orcamento.observacoes,
       enviado_cliente_em:
-        payload.statusOrcamento === "ENVIADO" && !orcamento.enviado_cliente_em ? db.fn.now() : orcamento.enviado_cliente_em,
+        payload.statusOrcamento === "ENVIADO"
+          ? orcamento.enviado_cliente_em || db.fn.now()
+          : null,
       arquivado_em:
-        payload.statusOrcamento === "ARQUIVADO" ? db.fn.now() : orcamento.arquivado_em,
+        payload.statusOrcamento === "ARQUIVADO" ? db.fn.now() : null,
     });
 
     await appendHistoricoOrdemServico(trx, {
@@ -1577,6 +1693,7 @@ module.exports = {
   addFotosEntrada,
   finalizarCadastroFotos,
   registrarComunicacaoWhatsApp,
+  confirmarRetirada,
   createOrcamento,
   generateOrcamentoPdf: saveGeneratedOrcamentoPdf,
   updateOrcamentoStatus,

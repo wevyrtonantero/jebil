@@ -26,6 +26,11 @@ const registrarComunicacaoWhatsAppV2 = asyncHandler(async (req, res) => {
   sendSuccess(res, data, "Comunicacao WhatsApp V2 registrada com sucesso.", 201);
 });
 
+const confirmarRetiradaV2 = asyncHandler(async (req, res) => {
+  const data = await ordemServicoV2Service.confirmarRetirada(Number(req.params.ordemId), req.user);
+  sendSuccess(res, data, "Retirada da ordem de servico V2 confirmada com sucesso.");
+});
+
 const createOrcamentoV2 = asyncHandler(async (req, res) => {
   const payload = validateCreateOrcamentoPayload(req.body);
   const data = await ordemServicoV2Service.createOrcamento(Number(req.params.ordemId), payload, req.user);
@@ -85,6 +90,7 @@ module.exports = {
   uploadFotosEntradaV2,
   finalizarCadastroFotosV2,
   registrarComunicacaoWhatsAppV2,
+  confirmarRetiradaV2,
   createOrcamentoV2,
   updateOrcamentoStatusV2,
   registrarPrevisaoPecaV2,

@@ -73,6 +73,22 @@ function toMoney(value) {
   return Number(value || 0).toFixed(2);
 }
 
+function resolveOrderItemUnitValue(item) {
+  const valorTotal = Number(item.valor_total || 0);
+  const quantidade = Number(item.quantidade || 1);
+  const valorUnitario = Number(item.valor_unitario || 0);
+
+  if (valorUnitario > 0) {
+    return valorUnitario;
+  }
+
+  if (quantidade > 0 && valorTotal > 0) {
+    return valorTotal / quantidade;
+  }
+
+  return 0;
+}
+
 function resolveWhatsappNumber(value = "") {
   const digits = String(value || "").replace(/\D/g, "");
 
@@ -114,14 +130,96 @@ function getLatestDiagnostico(ordem) {
   return [...(ordem.diagnosticos || [])].sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
 }
 
+function isAtendimentoRapido(order) {
+  if (order?.legado_atendimento_id) {
+    return true;
+  }
+
+  const itensValidos = (order?.items || []).filter((item) => item.status_item !== "CANCELADO");
+
+  return (
+    !String(order?.queixa_principal || "").trim() &&
+    itensValidos.length > 0 &&
+    itensValidos.every((item) => Boolean(item.execucao_direta) && !Boolean(item.exige_diagnostico))
+  );
+}
+
+function getDraftableOrderItems(order) {
+  return (order?.items || []).filter((item) => item.descricao && item.descricao !== "Diagnostico inicial" && ["AGUARDANDO_ORCAMENTO", "AGUARDANDO_AUTORIZACAO", "PRONTO_PARA_EXECUTAR"].includes(item.status_item));
+}
+
+function getFallbackOrderValue(order) {
+  return getDraftableOrderItems(order).reduce((total, item) => total + Number(item.valor_total || 0), 0);
+}
+
+function getDisplayedBudgetNumber(order) {
+  return formatExternalNumber(getLatestOrcamento(order)?.numero_externo) || "Sem numero";
+}
+
+function getDisplayedBudgetTotal(order) {
+  const latestOrcamento = getLatestOrcamento(order);
+
+  if (latestOrcamento) {
+    return Number(latestOrcamento.valor_total || 0);
+  }
+
+  return getFallbackOrderValue(order);
+}
+
+function getLatestBudgetStatus(order) {
+  return getLatestOrcamento(order)?.status_orcamento || "RASCUNHO";
+}
+
+function parseSystemDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "number") {
+    const dateFromNumber = new Date(value);
+    return Number.isNaN(dateFromNumber.getTime()) ? null : dateFromNumber;
+  }
+
+  const normalizedValue = String(value).trim();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const match = normalizedValue.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})?$/i,
+  );
+
+  if (match) {
+    const [, year, month, day, hours = "00", minutes = "00", seconds = "00"] = match;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours),
+      Number(minutes),
+      Number(seconds),
+      0,
+    );
+  }
+
+  const fallbackDate = new Date(normalizedValue);
+  return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+}
+
 function formatElapsedTime(value, nowTs) {
   if (!value) {
     return "Agora";
   }
 
-  const startedAt = new Date(value).getTime();
+  const parsedDate = parseSystemDate(value);
+  const startedAt = parsedDate?.getTime();
 
-  if (Number.isNaN(startedAt)) {
+  if (!startedAt || Number.isNaN(startedAt)) {
     return "Agora";
   }
 
@@ -147,9 +245,9 @@ function formatDateInput(value = "") {
     return "";
   }
 
-  const date = new Date(value);
+  const date = parseSystemDate(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (!date || Number.isNaN(date.getTime())) {
     return "";
   }
 
@@ -166,9 +264,9 @@ function formatDateLabel(value = "") {
     return "-";
   }
 
-  const date = new Date(value);
+  const date = parseSystemDate(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (!date || Number.isNaN(date.getTime())) {
     return value;
   }
 
@@ -180,9 +278,9 @@ function formatDateTimeInput(value = "") {
     return "";
   }
 
-  const date = new Date(value);
+  const date = parseSystemDate(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (!date || Number.isNaN(date.getTime())) {
     return "";
   }
 
@@ -196,7 +294,7 @@ function formatDateTimeInput(value = "") {
 
 function getAuthorizationItems(order) {
   const latestOrcamento = getLatestOrcamento(order);
-  const orderItems = (order?.items || []).filter((item) => item.descricao && item.descricao !== "Diagnostico inicial" && !["CONCLUIDO", "CANCELADO"].includes(item.status_item));
+  const orderItems = (order?.items || []).filter((item) => item.descricao && item.descricao !== "Diagnostico inicial" && item.status_item !== "CANCELADO");
   const usedOrderItemIds = new Set();
 
   return (latestOrcamento?.items || [])
@@ -244,7 +342,7 @@ function getAuthorizationItems(order) {
         null;
 
       return {
-        item_id: linkedOrderItem?.id || null,
+        item_id: linkedOrderItem?.id || (item.item_ordem_servico_id ? Number(item.item_ordem_servico_id) : null),
         descricao: item.descricao,
         descricao_peca: item.descricao,
         previsao_chegada: formatDateTimeInput(linkedOrderItem?.previsao_peca_atual || ""),
@@ -259,8 +357,8 @@ function getActivePartPreviews(order) {
   const activePreviews = (order?.previsoes_pecas || [])
     .filter((previsao) => previsao.status_previsao === "ATIVA")
     .sort((left, right) => {
-      const leftTs = left.previsao_chegada ? new Date(left.previsao_chegada).getTime() : Number.MAX_SAFE_INTEGER;
-      const rightTs = right.previsao_chegada ? new Date(right.previsao_chegada).getTime() : Number.MAX_SAFE_INTEGER;
+      const leftTs = parseSystemDate(left.previsao_chegada)?.getTime() || Number.MAX_SAFE_INTEGER;
+      const rightTs = parseSystemDate(right.previsao_chegada)?.getTime() || Number.MAX_SAFE_INTEGER;
       return leftTs - rightTs;
     });
 
@@ -284,14 +382,34 @@ function hasAguardandoPeca(order) {
   return getActivePartPreviews(order).length > 0;
 }
 
+function getApprovedOrderPhase(order) {
+  if (hasAguardandoPeca(order)) {
+    return "Aguardando pecas";
+  }
+
+  if ((order.items || []).some((item) => item.status_item === "EM_EXECUCAO")) {
+    return "Em execucao";
+  }
+
+  if ((order.items || []).some((item) => item.status_item === "CONCLUIDO")) {
+    return "Servico em andamento";
+  }
+
+  if ((order.items || []).some((item) => item.status_item === "PRONTO_PARA_EXECUTAR")) {
+    return "Na fila da oficina";
+  }
+
+  return "Aprovado";
+}
+
 function formatDateTimeCompact(value = "") {
   if (!value) {
     return "Sem prazo";
   }
 
-  const date = new Date(value);
+  const date = parseSystemDate(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (!date || Number.isNaN(date.getTime())) {
     return "Sem prazo";
   }
 
@@ -308,9 +426,9 @@ function formatCountdown(value = "", nowTs) {
     return "Sem prazo";
   }
 
-  const targetTs = new Date(value).getTime();
+  const targetTs = parseSystemDate(value)?.getTime();
 
-  if (Number.isNaN(targetTs)) {
+  if (!targetTs || Number.isNaN(targetTs)) {
     return "Sem prazo";
   }
 
@@ -373,6 +491,7 @@ function OrcamentistaV2Page() {
   const [ordens, setOrdens] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [sendChoiceOpen, setSendChoiceOpen] = useState(false);
   const [authorizationOpen, setAuthorizationOpen] = useState(false);
   const [partsControlOpen, setPartsControlOpen] = useState(false);
   const [authorizationLoading, setAuthorizationLoading] = useState(false);
@@ -385,11 +504,12 @@ function OrcamentistaV2Page() {
   const [authorizationItems, setAuthorizationItems] = useState([]);
   const [partsControlOrder, setPartsControlOrder] = useState(null);
   const [partsControlItems, setPartsControlItems] = useState([]);
+  const [pendingSendPayload, setPendingSendPayload] = useState(null);
 
   async function loadOrdens() {
     const data = await listOrdensServicoV2();
     const ordensFiltradas = data.filter((ordem) =>
-      ["EM_DIAGNOSTICO", "EM_ORCAMENTO", "AGUARDANDO_CLIENTE", "AGUARDANDO_PECA", "EM_EXECUCAO", "ARQUIVADA"].includes(ordem.status_geral),
+      ["ABERTA", "EM_DIAGNOSTICO", "EM_ORCAMENTO", "AGUARDANDO_CLIENTE", "AGUARDANDO_PECA", "EM_EXECUCAO", "PARCIALMENTE_CONCLUIDA", "ARQUIVADA"].includes(ordem.status_geral),
     );
 
     const ordensDetalhadas = await Promise.all(
@@ -402,7 +522,7 @@ function OrcamentistaV2Page() {
       }),
     );
 
-    setOrdens(ordensDetalhadas);
+    setOrdens(ordensDetalhadas.filter((ordem) => !isAtendimentoRapido(ordem)));
   }
 
   async function loadItemSuggestions(query = "") {
@@ -438,7 +558,12 @@ function OrcamentistaV2Page() {
     () =>
       ordens.filter((ordem) => {
         const latestOrcamento = getLatestOrcamento(ordem);
-        return !latestOrcamento || latestOrcamento.status_orcamento !== "ENVIADO";
+
+        if (!latestOrcamento) {
+          return true;
+        }
+
+        return ["RASCUNHO", "PENDENTE_ENVIO", "PARCIAL", "RECUSADO"].includes(latestOrcamento.status_orcamento);
       }),
     [ordens],
   );
@@ -446,10 +571,22 @@ function OrcamentistaV2Page() {
   const ordensEnviadas = useMemo(
     () =>
       ordens
-        .filter((ordem) => getLatestOrcamento(ordem)?.status_orcamento === "ENVIADO" && !hasAguardandoPeca(ordem))
+        .filter((ordem) => getLatestBudgetStatus(ordem) === "ENVIADO")
         .sort((left, right) => {
-          const leftDate = new Date(getLatestOrcamento(left)?.enviado_cliente_em || 0).getTime();
-          const rightDate = new Date(getLatestOrcamento(right)?.enviado_cliente_em || 0).getTime();
+          const leftDate = parseSystemDate(getLatestOrcamento(left)?.enviado_cliente_em)?.getTime() || 0;
+          const rightDate = parseSystemDate(getLatestOrcamento(right)?.enviado_cliente_em)?.getTime() || 0;
+          return rightDate - leftDate;
+        }),
+    [ordens],
+  );
+
+  const ordensAprovadas = useMemo(
+    () =>
+      ordens
+        .filter((ordem) => getLatestBudgetStatus(ordem) === "APROVADO")
+        .sort((left, right) => {
+          const leftDate = parseSystemDate(getLatestOrcamento(left)?.atualizado_em || left.atualizado_em)?.getTime() || 0;
+          const rightDate = parseSystemDate(getLatestOrcamento(right)?.atualizado_em || right.atualizado_em)?.getTime() || 0;
           return rightDate - leftDate;
         }),
     [ordens],
@@ -460,8 +597,8 @@ function OrcamentistaV2Page() {
       ordens
         .filter((ordem) => hasAguardandoPeca(ordem))
         .sort((left, right) => {
-          const leftTime = new Date(getActivePartPreviews(left)[0]?.previsao_chegada || 0).getTime() || Number.MAX_SAFE_INTEGER;
-          const rightTime = new Date(getActivePartPreviews(right)[0]?.previsao_chegada || 0).getTime() || Number.MAX_SAFE_INTEGER;
+          const leftTime = parseSystemDate(getActivePartPreviews(left)[0]?.previsao_chegada)?.getTime() || Number.MAX_SAFE_INTEGER;
+          const rightTime = parseSystemDate(getActivePartPreviews(right)[0]?.previsao_chegada)?.getTime() || Number.MAX_SAFE_INTEGER;
           return leftTime - rightTime;
         }),
     [ordens],
@@ -496,16 +633,14 @@ function OrcamentistaV2Page() {
               autorizacao_status: item.autorizacao_status || "AGUARDANDO_RESPOSTA",
             }),
           )
-        : detail.items
-            .filter((item) => ["AGUARDANDO_ORCAMENTO", "AGUARDANDO_AUTORIZACAO", "PRONTO_PARA_EXECUTAR"].includes(item.status_item))
-            .map((item) =>
+        : getDraftableOrderItems(detail).map((item) =>
               createOrcamentoItem({
                 item_ordem_servico_id: item.id,
                 descricao: item.descricao,
-                quantidade: "1",
-                valor_unitario: "0.00",
-                valor_total: "0.00",
-                observacao: "",
+                quantidade: String(item.quantidade || 1),
+                valor_unitario: toMoney(resolveOrderItemUnitValue(item)),
+                valor_total: toMoney(item.valor_total || 0),
+                observacao: item.observacoes || "",
                 origem: item.origem || "ORDEM_SERVICO",
                 autorizacao_status: item.autorizacao_status || "AGUARDANDO_RESPOSTA",
               }),
@@ -523,32 +658,30 @@ function OrcamentistaV2Page() {
     try {
       let detail = await getOrdemServicoV2(ordemId);
       let authorizationList = getAuthorizationItems(detail);
+      let latestOrcamento = getLatestOrcamento(detail);
 
-      if (!authorizationList.length) {
-        const latestOrcamento = getLatestOrcamento(detail);
+      if (!authorizationList.length && latestOrcamento?.items?.length) {
+        await createOrcamentoV2(ordemId, {
+          numero_externo: latestOrcamento.numero_externo,
+          data_prometida: detail.data_prometida || null,
+          observacoes: latestOrcamento.observacoes || "",
+          status_orcamento: latestOrcamento.status_orcamento || "ENVIADO",
+          items: latestOrcamento.items.map((item) => ({
+            item_ordem_servico_id: item.item_ordem_servico_id || null,
+            descricao: item.descricao,
+            quantidade: Number(item.quantidade || 1),
+            valor_peca: Number(item.valor_peca || 0),
+            valor_mao_obra: Number(item.valor_mao_obra || 0),
+            valor_total: Number(item.valor_total || 0),
+            observacao: item.observacao || null,
+            origem: item.origem || "INCLUIDO_ORCAMENTISTA",
+            autorizacao_status: item.autorizacao_status || "AGUARDANDO_RESPOSTA",
+          })),
+        });
 
-        if (latestOrcamento?.items?.length) {
-          await createOrcamentoV2(ordemId, {
-            numero_externo: latestOrcamento.numero_externo,
-            data_prometida: detail.data_prometida || null,
-            observacoes: latestOrcamento.observacoes || "",
-            status_orcamento: latestOrcamento.status_orcamento || "ENVIADO",
-            items: latestOrcamento.items.map((item) => ({
-              item_ordem_servico_id: item.item_ordem_servico_id || null,
-              descricao: item.descricao,
-              quantidade: Number(item.quantidade || 1),
-              valor_peca: Number(item.valor_peca || 0),
-              valor_mao_obra: Number(item.valor_mao_obra || 0),
-              valor_total: Number(item.valor_total || 0),
-              observacao: item.observacao || null,
-              origem: item.origem || "INCLUIDO_ORCAMENTISTA",
-              autorizacao_status: item.autorizacao_status || "AGUARDANDO_RESPOSTA",
-            })),
-          });
-
-          detail = await getOrdemServicoV2(ordemId);
-          authorizationList = getAuthorizationItems(detail);
-        }
+        detail = await getOrdemServicoV2(ordemId);
+        latestOrcamento = getLatestOrcamento(detail);
+        authorizationList = getAuthorizationItems(detail);
       }
 
       setSelectedOrder(detail);
@@ -631,11 +764,12 @@ function OrcamentistaV2Page() {
       return;
     }
 
+    const orderSnapshot = selectedOrder;
     setBusy(true);
     setError("");
 
     try {
-      await createOrcamentoV2(selectedOrder.id, {
+      const response = await createOrcamentoV2(selectedOrder.id, {
         numero_externo: orcamentoForm.numero_externo,
         data_prometida: orcamentoForm.data_prometida || null,
         observacoes: orcamentoForm.observacoes,
@@ -653,10 +787,22 @@ function OrcamentistaV2Page() {
         })),
       });
 
-      await refreshSelectedOrder(selectedOrder.id);
-      setFeedback("Orcamento salvo com sucesso e PDF gerado na pasta.");
+      const orcamentoSalvo = response?.orcamento;
+
+      if (!orcamentoSalvo?.id) {
+        throw new Error("Orcamento salvo sem identificador para envio.");
+      }
+
+      await loadOrdens();
+      setPendingSendPayload({
+        order: orderSnapshot,
+        orcamento: orcamentoSalvo,
+      });
+      setDetailOpen(false);
+      setSendChoiceOpen(true);
+      setFeedback(response?.pdf_warning || "Orcamento salvo. Escolha como enviar ao cliente.");
     } catch (requestError) {
-      setError(requestError?.response?.data?.message || "Nao foi possivel criar o orcamento.");
+      setError(requestError?.response?.data?.message || requestError?.message || "Nao foi possivel criar o orcamento.");
     } finally {
       setBusy(false);
     }
@@ -770,6 +916,8 @@ function OrcamentistaV2Page() {
     setError("");
 
     try {
+      const latestOrcamento = getLatestOrcamento(selectedOrder);
+
       for (const item of authorizationItems) {
         await updateItemAutorizacaoV2(selectedOrder.id, item.item_id, "AUTORIZADO");
 
@@ -780,6 +928,12 @@ function OrcamentistaV2Page() {
             observacao: item.observacao.trim() || null,
           });
         }
+      }
+
+      if (latestOrcamento?.id) {
+        await updateOrcamentoStatusV2(latestOrcamento.id, {
+          status_orcamento: "APROVADO",
+        });
       }
 
       await loadOrdens();
@@ -894,6 +1048,86 @@ function OrcamentistaV2Page() {
     });
   }
 
+  async function enviarOrcamentoPorWhatsappPdf(ordem, orcamento) {
+    const whatsappNumber = resolveWhatsappNumber(ordem?.cliente_telefone);
+
+    if (!whatsappNumber) {
+      throw new Error("Nao ha telefone do cliente para enviar o orcamento.");
+    }
+
+    let orcamentoAtualizado = orcamento;
+
+    if (!orcamentoAtualizado?.pdf_url) {
+      const pdfData = await generateOrcamentoPdfV2(orcamento.id);
+      orcamentoAtualizado = pdfData?.orcamento || orcamentoAtualizado;
+    }
+
+    const mensagemPreparada = buildWhatsappPdfMessage(ordem, orcamentoAtualizado);
+    await marcarOrcamentoComoEnviado(orcamentoAtualizado.id, mensagemPreparada);
+    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(mensagemPreparada)}`, "_blank", "noopener,noreferrer");
+
+    return orcamentoAtualizado;
+  }
+
+  function closeSendChoice() {
+    setSendChoiceOpen(false);
+    setPendingSendPayload(null);
+    setSelectedOrder(null);
+  }
+
+  async function handleSendChoiceText() {
+    const payload = pendingSendPayload;
+
+    if (!payload) {
+      return;
+    }
+
+    const whatsappNumber = resolveWhatsappNumber(payload.order?.cliente_telefone);
+
+    if (!whatsappNumber) {
+      setError("Nao ha telefone do cliente para enviar o orcamento.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      const mensagemPreparada = buildWhatsappTextoOrcamento(payload.order, payload.orcamento);
+      await marcarOrcamentoComoEnviado(payload.orcamento.id, mensagemPreparada);
+      window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(mensagemPreparada)}`, "_blank", "noopener,noreferrer");
+      await loadOrdens();
+      closeSendChoice();
+      setFeedback("Orcamento enviado por texto e movido para enviados.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || requestError?.message || "Nao foi possivel enviar o orcamento em texto.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSendChoicePdf() {
+    const payload = pendingSendPayload;
+
+    if (!payload) {
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      await enviarOrcamentoPorWhatsappPdf(payload.order, payload.orcamento);
+      await loadOrdens();
+      closeSendChoice();
+      setFeedback("Orcamento enviado com PDF e movido para enviados.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || requestError?.message || "Nao foi possivel enviar o orcamento em PDF.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleEnviarTextoWhatsApp(orcamento) {
     if (!selectedOrder) {
       return;
@@ -929,29 +1163,17 @@ function OrcamentistaV2Page() {
       return;
     }
 
-    const whatsappNumber = resolveWhatsappNumber(selectedOrder.cliente_telefone);
-
-    if (!whatsappNumber) {
-      setError("Nao ha telefone do cliente para enviar o orcamento.");
-      return;
-    }
-
     setBusy(true);
     setError("");
 
     try {
-      const pdfData = await generateOrcamentoPdfV2(orcamento.id);
-      const orcamentoAtualizado = pdfData?.orcamento || orcamento;
-
-      const mensagemPreparada = buildWhatsappPdfMessage(selectedOrder, orcamentoAtualizado);
-      await marcarOrcamentoComoEnviado(orcamento.id, mensagemPreparada);
-      window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(mensagemPreparada)}`, "_blank", "noopener,noreferrer");
+      await enviarOrcamentoPorWhatsappPdf(selectedOrder, orcamento);
       await loadOrdens();
       setDetailOpen(false);
       setSelectedOrder(null);
       setFeedback("Orcamento enviado com PDF e movido para enviados.");
     } catch (requestError) {
-      setError(requestError?.response?.data?.message || "Nao foi possivel enviar o orcamento em PDF.");
+      setError(requestError?.response?.data?.message || requestError?.message || "Nao foi possivel enviar o orcamento em PDF.");
     } finally {
       setBusy(false);
     }
@@ -981,43 +1203,72 @@ function OrcamentistaV2Page() {
 
   return (
     <section className="page-section">
-      <div className="panel-card">
-        {error ? <p className="form-error">{error}</p> : null}
-        {feedback ? <p className="field-note">{feedback}</p> : null}
+      <div className="panel-card orcamento-page-shell">
+        <div className="orcamento-page-header">
+          <div className="workspace-heading">
+            <div>
+              <p className="eyebrow">Orcamentista</p>
+              <h2>Organizacao comercial</h2>
+              <p className="subtitle">Visualize o funil completo de montagem, envio, aprovacao e acompanhamento de pecas.</p>
+            </div>
+          </div>
 
-        <div className="workspace-heading">
-          <div>
-            <p className="eyebrow">Orcamentista</p>
-            <h2>Organizacao comercial</h2>
-            <p className="subtitle">Separe o que ainda precisa montar do que ja foi enviado ao cliente.</p>
+          <div className="orcamento-overview-grid">
+            <article className="orcamento-overview-card">
+              <span>Pendentes</span>
+              <strong>{ordensPendentes.length}</strong>
+              <small>Precisam montar ou revisar</small>
+            </article>
+            <article className="orcamento-overview-card">
+              <span>Enviados</span>
+              <strong>{ordensEnviadas.length}</strong>
+              <small>Aguardando resposta do cliente</small>
+            </article>
+            <article className="orcamento-overview-card">
+              <span>Aprovados</span>
+              <strong>{ordensAprovadas.length}</strong>
+              <small>Ja seguiram para oficina</small>
+            </article>
+            <article className="orcamento-overview-card">
+              <span>Pecas</span>
+              <strong>{ordensAguardandoPecas.length}</strong>
+              <small>Com prazo de chegada em aberto</small>
+            </article>
           </div>
         </div>
 
-        <div className="section-grid">
-          <div className="table-list">
-            <div className="workspace-heading">
-              <div>
-                <p className="eyebrow">Pendentes</p>
-                <h2>Para montar ou enviar</h2>
+        {error || feedback ? (
+          <div className="orcamento-feedback-stack">
+            {error ? <p className="form-error">{error}</p> : null}
+            {feedback ? <p className="field-note orcamento-feedback-note">{feedback}</p> : null}
+          </div>
+        ) : null}
+
+        <div className="orcamento-board">
+          <div className="workspace-stack">
+            <div className="table-list orcamento-section">
+              <div className="orcamento-section-header">
+                <div>
+                  <p className="eyebrow">Pendentes</p>
+                  <h2>Para montar ou enviar</h2>
+                </div>
+                <span className="orcamento-section-count">{ordensPendentes.length}</span>
               </div>
-            </div>
 
-            {ordensPendentes.map((ordem) => {
-              const latestOrcamento = getLatestOrcamento(ordem);
-
-              return (
-                <article className="row-card orcamento-pendente-card" key={ordem.id}>
-                  <div className="orcamento-pendente-main">
+              {ordensPendentes.map((ordem) => (
+                <article className="row-card orcamento-card orcamento-pendente-card" key={ordem.id}>
+                  <div className="orcamento-card-main">
                     <strong>{ordem.cliente_nome}</strong>
                     <p>
                       {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
                     </p>
+                    <small>Pronto para montar proposta comercial.</small>
                   </div>
 
                   <div className="orcamento-pendente-side">
                     <div className="orcamento-pendente-meta">
-                      <strong>{formatExternalNumber(latestOrcamento?.numero_externo) || "Sem numero"}</strong>
-                      <span>R$ {toMoney(latestOrcamento?.valor_total || 0)}</span>
+                      <strong>{getDisplayedBudgetNumber(ordem)}</strong>
+                      <span>R$ {toMoney(getDisplayedBudgetTotal(ordem))}</span>
                     </div>
 
                     <button
@@ -1031,104 +1282,150 @@ function OrcamentistaV2Page() {
                     </button>
                   </div>
                 </article>
-              );
-            })}
-            {ordensPendentes.length === 0 ? <div className="empty-state">Nenhuma ordem pendente de tratamento comercial.</div> : null}
-          </div>
+              ))}
+              {ordensPendentes.length === 0 ? <div className="empty-state">Nenhuma ordem pendente de tratamento comercial.</div> : null}
+            </div>
 
-          <div className="table-list">
-            <div className="workspace-heading">
-              <div>
-                <p className="eyebrow">Enviados</p>
-                <h2>Orcamentos enviados</h2>
+            <div className="table-list orcamento-section">
+              <div className="orcamento-section-header">
+                <div>
+                  <p className="eyebrow">Aprovados</p>
+                  <h2>Orcamentos aprovados</h2>
+                </div>
+                <span className="orcamento-section-count">{ordensAprovadas.length}</span>
               </div>
-            </div>
 
-            {ordensEnviadas.map((ordem) => {
-              const latestOrcamento = getLatestOrcamento(ordem);
+              {ordensAprovadas.map((ordem) => {
+                const latestOrcamento = getLatestOrcamento(ordem);
 
-              return (
-                <article className="row-card" key={`sent-${ordem.id}`}>
-                  <div>
-                    <strong>{ordem.cliente_nome}</strong>
-                    <p>
-                      {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
-                    </p>
-                    <small>
-                      {formatExternalNumber(latestOrcamento?.numero_externo) || "Sem numero"} - enviado ha{" "}
-                      {formatElapsedTime(latestOrcamento?.enviado_cliente_em, clockNow)}
-                    </small>
-                  </div>
-                  <div className="row-actions stacked">
-                    <button
-                      type="button"
-                      className="icon-button success-button orcamento-sent-icon-button"
-                      onClick={() => void openAuthorizationFlow(ordem.id)}
-                      aria-label={`Autorizar orcamento de ${ordem.cliente_nome}`}
-                      title="Autorizar"
-                    >
-                      <AppIcon name="check" size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button orcamento-sent-icon-button"
-                      onClick={() => openOrderDetail(ordem.id)}
-                      aria-label={`Abrir orcamento de ${ordem.cliente_nome}`}
-                      title="Abrir"
-                    >
-                      <AppIcon name="pencil" size={18} />
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-            {ordensEnviadas.length === 0 ? <div className="empty-state">Nenhum orcamento enviado no momento.</div> : null}
-          </div>
-        </div>
-
-        <div className="table-list orcamento-parts-panel">
-          <div className="workspace-heading">
-            <div>
-              <p className="eyebrow">Pecas</p>
-              <h2>Aguardando pecas</h2>
-            </div>
-          </div>
-
-          {ordensAguardandoPecas.map((ordem) => {
-            const activeParts = getActivePartPreviews(ordem);
-
-            return (
-              <article className="row-card orcamento-part-card" key={`parts-${ordem.id}`}>
-                <div className="orcamento-part-card-copy">
-                  <strong>{ordem.cliente_nome}</strong>
-                  <p>
-                    {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
-                  </p>
-                  <div className="orcamento-part-lines">
-                    {activeParts.map((part) => (
-                      <div className="orcamento-part-line" key={`${ordem.id}-${part.id}`}>
-                        <span>{part.descricao_peca}</span>
-                        <small>{formatDateTimeCompact(part.previsao_chegada)}</small>
-                        <strong>{formatCountdown(part.previsao_chegada, clockNow)}</strong>
+                return (
+                  <article className="row-card orcamento-card orcamento-card-approved" key={`approved-${ordem.id}`}>
+                    <div className="orcamento-card-main">
+                      <strong>{ordem.cliente_nome}</strong>
+                      <p>
+                        {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
+                      </p>
+                      <small>{formatExternalNumber(latestOrcamento?.numero_externo) || "Sem numero"}</small>
+                    </div>
+                    <div className="orcamento-pendente-side">
+                      <div className="orcamento-pendente-meta">
+                        <span>{getApprovedOrderPhase(ordem)}</span>
+                        <StatusBadge tone={getStatusTone("APROVADO")}>APROVADO</StatusBadge>
                       </div>
-                    ))}
-                  </div>
+                      <button
+                        type="button"
+                        className="icon-button orcamento-sent-icon-button"
+                        onClick={() => openOrderDetail(ordem.id)}
+                        aria-label={`Abrir orcamento aprovado de ${ordem.cliente_nome}`}
+                        title="Abrir"
+                      >
+                        <AppIcon name="pencil" size={18} />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              {ordensAprovadas.length === 0 ? <div className="empty-state">Nenhum orcamento aprovado no momento.</div> : null}
+            </div>
+          </div>
+
+          <div className="workspace-stack">
+            <div className="table-list orcamento-section">
+              <div className="orcamento-section-header">
+                <div>
+                  <p className="eyebrow">Enviados</p>
+                  <h2>Orcamentos enviados</h2>
                 </div>
-                <div className="row-actions stacked">
-                  <button
-                    type="button"
-                    className="icon-button orcamento-sent-icon-button"
-                    onClick={() => void openPartsControl(ordem.id)}
-                    aria-label={`Atualizar previsao de pecas de ${ordem.cliente_nome}`}
-                    title="Atualizar prazo"
-                  >
-                    <AppIcon name="clock" size={18} />
-                  </button>
+                <span className="orcamento-section-count">{ordensEnviadas.length}</span>
+              </div>
+
+              {ordensEnviadas.map((ordem) => {
+                const latestOrcamento = getLatestOrcamento(ordem);
+
+                return (
+                  <article className="row-card orcamento-card orcamento-card-sent" key={`sent-${ordem.id}`}>
+                    <div className="orcamento-card-main">
+                      <strong>{ordem.cliente_nome}</strong>
+                      <p>
+                        {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
+                      </p>
+                      <small>
+                        {formatExternalNumber(latestOrcamento?.numero_externo) || "Sem numero"} - enviado ha{" "}
+                        {formatElapsedTime(latestOrcamento?.enviado_cliente_em, clockNow)}
+                      </small>
+                    </div>
+                    <div className="row-actions stacked">
+                      <button
+                        type="button"
+                        className="icon-button success-button orcamento-sent-icon-button"
+                        onClick={() => void openAuthorizationFlow(ordem.id)}
+                        aria-label={`Autorizar orcamento de ${ordem.cliente_nome}`}
+                        title="Autorizar"
+                      >
+                        <AppIcon name="check" size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button orcamento-sent-icon-button"
+                        onClick={() => openOrderDetail(ordem.id)}
+                        aria-label={`Abrir orcamento de ${ordem.cliente_nome}`}
+                        title="Abrir"
+                      >
+                        <AppIcon name="pencil" size={18} />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              {ordensEnviadas.length === 0 ? <div className="empty-state">Nenhum orcamento enviado no momento.</div> : null}
+            </div>
+
+            <div className="table-list orcamento-section orcamento-parts-panel">
+              <div className="orcamento-section-header">
+                <div>
+                  <p className="eyebrow">Pecas</p>
+                  <h2>Aguardando pecas</h2>
                 </div>
-              </article>
-            );
-          })}
-          {ordensAguardandoPecas.length === 0 ? <div className="empty-state">Nenhuma moto aguardando pecas no momento.</div> : null}
+                <span className="orcamento-section-count">{ordensAguardandoPecas.length}</span>
+              </div>
+
+              {ordensAguardandoPecas.map((ordem) => {
+                const activeParts = getActivePartPreviews(ordem);
+
+                return (
+                  <article className="row-card orcamento-card orcamento-part-card" key={`parts-${ordem.id}`}>
+                    <div className="orcamento-part-card-copy">
+                      <strong>{ordem.cliente_nome}</strong>
+                      <p>
+                        {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
+                      </p>
+                      <div className="orcamento-part-lines">
+                        {activeParts.map((part) => (
+                          <div className="orcamento-part-line" key={`${ordem.id}-${part.id}`}>
+                            <span>{part.descricao_peca}</span>
+                            <small>{formatDateTimeCompact(part.previsao_chegada)}</small>
+                            <strong>{formatCountdown(part.previsao_chegada, clockNow)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="row-actions stacked">
+                      <button
+                        type="button"
+                        className="icon-button orcamento-sent-icon-button"
+                        onClick={() => void openPartsControl(ordem.id)}
+                        aria-label={`Atualizar previsao de pecas de ${ordem.cliente_nome}`}
+                        title="Atualizar prazo"
+                      >
+                        <AppIcon name="clock" size={18} />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              {ordensAguardandoPecas.length === 0 ? <div className="empty-state">Nenhuma moto aguardando pecas no momento.</div> : null}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1271,6 +1568,34 @@ function OrcamentistaV2Page() {
       </Modal>
 
       <Modal
+        open={sendChoiceOpen}
+        onClose={closeSendChoice}
+        title="Escolher envio"
+        subtitle={pendingSendPayload?.order ? `${pendingSendPayload.order.cliente_nome} - ${pendingSendPayload.order.motocicleta_modelo}` : ""}
+        size="small"
+        actions={
+          <button type="button" className="ghost-button" onClick={closeSendChoice} disabled={busy}>
+            Fechar
+          </button>
+        }
+      >
+        <div className="selection-grid">
+          <button type="button" className="selection-card" onClick={() => void handleSendChoicePdf()} disabled={busy}>
+            <strong>
+              <AppIcon name="printer" size={18} /> PDF
+            </strong>
+            <p>Gera o PDF e prepara o WhatsApp com o link.</p>
+          </button>
+          <button type="button" className="selection-card" onClick={() => void handleSendChoiceText()} disabled={busy}>
+            <strong>
+              <AppIcon name="whatsapp" size={18} /> Mensagem
+            </strong>
+            <p>Envia o resumo do orcamento em texto direto no WhatsApp.</p>
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         closeOnBackdrop={false}
@@ -1281,9 +1606,30 @@ function OrcamentistaV2Page() {
             : ""
         }
         size="large"
+        actions={
+          <>
+            <button type="button" className="ghost-button" onClick={() => setDetailOpen(false)} disabled={busy}>
+              Fechar
+            </button>
+            <div className="orcamento-total-footer">
+              <span>Total</span>
+              <strong>R$ {toMoney(totalOrcamento)}</strong>
+            </div>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={busy || !isExternalNumberValid(orcamentoForm.numero_externo)}
+              onClick={() => void handleCreateOrcamento()}
+            >
+              {busy ? "Salvando..." : "Salvar orcamento"}
+            </button>
+          </>
+        }
       >
         {selectedOrder ? (
           <div className="modal-stack">
+            {error ? <p className="form-error">{error}</p> : null}
+            {feedback ? <p className="field-note">{feedback}</p> : null}
             <datalist id="orcamento-item-options">
               {itemSuggestions.map((suggestion) => (
                 <option key={suggestion} value={suggestion} />
@@ -1404,16 +1750,6 @@ function OrcamentistaV2Page() {
                 placeholder="Observacao final do orcamento"
               />
             </label>
-
-            <div className="button-row">
-              <div className="orcamento-total-footer">
-                <span>Total</span>
-                <strong>R$ {toMoney(totalOrcamento)}</strong>
-              </div>
-              <button type="button" className="primary-button" disabled={busy || !isExternalNumberValid(orcamentoForm.numero_externo)} onClick={handleCreateOrcamento}>
-                Finalizar orcamento
-              </button>
-            </div>
 
             {getLatestOrcamento(selectedOrder) ? (
               <article className="row-card">
