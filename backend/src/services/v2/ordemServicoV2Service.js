@@ -75,6 +75,52 @@ async function ensureNoActiveOrderForMotocicleta(motocicletaId, trx = db) {
   );
 }
 
+function normalizeMySqlDateTime(value) {
+  if (!value) {
+    return null;
+  }
+
+  const rawValue = String(value).trim();
+
+  if (!rawValue) {
+    return null;
+  }
+
+  const parsedDate = new Date(rawValue);
+
+  if (!Number.isNaN(parsedDate.getTime())) {
+    const year = parsedDate.getFullYear();
+    const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
+    const day = String(parsedDate.getDate()).padStart(2, "0");
+    const hours = String(parsedDate.getHours()).padStart(2, "0");
+    const minutes = String(parsedDate.getMinutes()).padStart(2, "0");
+    const seconds = String(parsedDate.getSeconds()).padStart(2, "0");
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  }
+
+  const mysqlLikeValue = rawValue.replace("T", " ").replace(/Z$/i, "");
+
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(mysqlLikeValue)) {
+    return mysqlLikeValue.length === 16 ? `${mysqlLikeValue}:00` : mysqlLikeValue;
+  }
+
+  return rawValue;
+}
+
+function normalizeOrderItemOrigin(value) {
+  const normalizedValue = String(value || "").trim().toUpperCase();
+
+  if (["SOLICITADO_CLIENTE", "GERADO_DIAGNOSTICO", "INCLUIDO_ORCAMENTISTA", "RETORNO_GARANTIA"].includes(normalizedValue)) {
+    return normalizedValue;
+  }
+
+  if (["AVULSO", "ORDEM_SERVICO"].includes(normalizedValue)) {
+    return "INCLUIDO_ORCAMENTISTA";
+  }
+
+  return "SOLICITADO_CLIENTE";
+}
+
 function normalizeItems(items, currentUser) {
   return items.map((item) => {
     const autorizacaoStatus = item.autorizacaoStatus || "AGUARDANDO_RESPOSTA";
@@ -83,14 +129,14 @@ function normalizeItems(items, currentUser) {
       descricao: String(item.descricao || "").trim(),
       categoria: item.categoria ? String(item.categoria).trim() : null,
       tipo: item.tipo ? String(item.tipo).trim() : null,
-      origem: item.origem || "SOLICITADO_CLIENTE",
+      origem: normalizeOrderItemOrigin(item.origem || "SOLICITADO_CLIENTE"),
       execucaoDireta: Boolean(item.execucaoDireta),
       exigeDiagnostico: Boolean(item.exigeDiagnostico),
       autorizacaoStatus,
       pagamentoStatus,
       prioridade: item.prioridade || "NORMAL",
-      dataPrometida: item.dataPrometida || null,
-      previsaoPecaAtual: item.previsaoPecaAtual || null,
+      dataPrometida: normalizeMySqlDateTime(item.dataPrometida || null),
+      previsaoPecaAtual: normalizeMySqlDateTime(item.previsaoPecaAtual || null),
       observacoes: item.observacoes ? String(item.observacoes).trim() : null,
       garantiaAplicavel: Boolean(item.garantiaAplicavel),
       criadoPor: currentUser.id,
@@ -1149,6 +1195,134 @@ function sumOrcamentoItems(items = []) {
   return items.reduce((acc, item) => acc + Number(item.valorTotal || 0), 0);
 }
 
+async function ensureOrcamentoItemsLinkedToOrder(trx, ordemServicoId, payloadItems, currentUser, dataPrometida = null) {
+  if (!payloadItems.length) {
+    return payloadItems;
+  }
+
+  const existingItems = await itemOrdemServicoV2Repository.listByOrdemServicoId(ordemServicoId, trx);
+  const usedItemIds = new Set();
+  const linkedItems = [];
+  const missingItems = [];
+
+  for (const item of payloadItems) {
+    if (item.itemOrdemServicoId) {
+      usedItemIds.add(Number(item.itemOrdemServicoId));
+      linkedItems.push(item);
+      continue;
+    }
+
+    const normalizedDescricao = String(item.descricao || "").trim().toLowerCase();
+    const matchedItem =
+      existingItems.find((existingItem) => Number(existingItem.id) === Number(item.itemOrdemServicoId) && !usedItemIds.has(Number(existingItem.id))) ||
+      existingItems.find((existingItem) => {
+        const sameDescription = String(existingItem.descricao || "").trim().toLowerCase() === normalizedDescricao;
+        return sameDescription && !usedItemIds.has(Number(existingItem.id));
+      }) ||
+      existingItems.find((existingItem) => {
+        const existingDescricao = String(existingItem.descricao || "").trim().toLowerCase();
+        const similar = existingDescricao.includes(normalizedDescricao) || normalizedDescricao.includes(existingDescricao);
+        return similar && !usedItemIds.has(Number(existingItem.id));
+      }) ||
+      null;
+
+    if (matchedItem) {
+      usedItemIds.add(Number(matchedItem.id));
+      linkedItems.push({
+        ...item,
+        itemOrdemServicoId: matchedItem.id,
+      });
+      continue;
+    }
+
+    missingItems.push(item);
+  }
+
+  if (missingItems.length) {
+    const normalizedMissingItems = normalizeItems(
+      missingItems.map((item) => ({
+        descricao: item.descricao,
+        categoria: null,
+        tipo: null,
+        origem: item.origem || "INCLUIDO_ORCAMENTISTA",
+        execucaoDireta: true,
+        exigeDiagnostico: false,
+        autorizacaoStatus: item.autorizacaoStatus || "AGUARDANDO_RESPOSTA",
+        pagamentoStatus: "PENDENTE",
+        prioridade: "NORMAL",
+        dataPrometida: dataPrometida || null,
+        previsaoPecaAtual: null,
+        observacoes: item.observacao || null,
+        garantiaAplicavel: false,
+      })),
+      currentUser,
+    );
+
+    const insertedItems = await itemOrdemServicoV2Repository.insertMany(
+      trx,
+      normalizedMissingItems.map((item) => ({
+        ordemServicoId,
+        descricao: item.descricao,
+        categoria: item.categoria,
+        tipo: item.tipo,
+        origem: item.origem,
+        execucaoDireta: item.execucaoDireta,
+        exigeDiagnostico: item.exigeDiagnostico,
+        autorizacaoStatus: item.autorizacaoStatus,
+        pagamentoStatus: item.pagamentoStatus,
+        statusItem: item.statusItem,
+        prioridade: item.prioridade,
+        dataPrometida: item.dataPrometida,
+        previsaoPecaAtual: item.previsaoPecaAtual,
+        observacoes: item.observacoes,
+        criadoPor: item.criadoPor,
+        garantiaAplicavel: item.garantiaAplicavel,
+      })),
+    );
+
+    const insertedLookup = [...insertedItems].reverse();
+
+    for (const missingItem of missingItems) {
+      const createdItem =
+        insertedLookup.find((existingItem) => {
+          if (usedItemIds.has(Number(existingItem.id))) {
+            return false;
+          }
+
+          return String(existingItem.descricao || "").trim().toLowerCase() === String(missingItem.descricao || "").trim().toLowerCase();
+        }) || null;
+
+      if (!createdItem) {
+        continue;
+      }
+
+      usedItemIds.add(Number(createdItem.id));
+      linkedItems.push({
+        ...missingItem,
+        itemOrdemServicoId: createdItem.id,
+      });
+    }
+  }
+
+  return payloadItems.map((item) => {
+    const linked =
+      linkedItems.find((linkedItem) => linkedItem === item) ||
+      linkedItems.find((linkedItem) => {
+        if (item.itemOrdemServicoId && Number(linkedItem.itemOrdemServicoId) === Number(item.itemOrdemServicoId)) {
+          return true;
+        }
+
+        return String(linkedItem.descricao || "").trim().toLowerCase() === String(item.descricao || "").trim().toLowerCase();
+      }) ||
+      item;
+
+    return {
+      ...item,
+      itemOrdemServicoId: linked.itemOrdemServicoId || item.itemOrdemServicoId || null,
+    };
+  });
+}
+
 function isManagedOrcamentoPdf(pdfUrl = "") {
   return String(pdfUrl || "").startsWith("/uploads/orcamentos-pdf/");
 }
@@ -1214,6 +1388,7 @@ async function saveGeneratedOrcamentoPdf(orcamentoId, currentUser, registerHisto
 async function createOrcamento(ordemServicoId, payload, currentUser) {
   const data = await db.transaction(async (trx) => {
     const ordem = await ordemServicoV2Repository.findById(ordemServicoId, trx);
+    const dataPrometidaNormalizada = normalizeMySqlDateTime(payload.dataPrometida);
 
     if (!ordem) {
       throw new ApiError(404, "Ordem de servico V2 nao encontrada.");
@@ -1223,11 +1398,19 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
     const orcamentoExistente = orcamentosExistentes[0] || null;
     const valorTotal = sumOrcamentoItems(payload.items);
 
-    if (payload.dataPrometida) {
+    if (dataPrometidaNormalizada) {
       await ordemServicoV2Repository.updateFields(trx, ordemServicoId, {
-        data_prometida: payload.dataPrometida,
+        data_prometida: dataPrometidaNormalizada,
       });
     }
+
+    const payloadItemsComVinculo = await ensureOrcamentoItemsLinkedToOrder(
+      trx,
+      ordemServicoId,
+      payload.items,
+      currentUser,
+      dataPrometidaNormalizada || ordem.data_prometida || null,
+    );
 
     const orcamento = orcamentoExistente
       ? await orcamentoV2Repository.updateFields(trx, orcamentoExistente.id, {
@@ -1250,7 +1433,7 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
     const items = await orcamentoV2Repository.replaceItens(
       trx,
       orcamento.id,
-      payload.items.map((item) => ({
+      payloadItemsComVinculo.map((item) => ({
         itemOrdemServicoId: item.itemOrdemServicoId,
         descricao: item.descricao,
         quantidade: item.quantidade,
@@ -1263,7 +1446,7 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
       })),
     );
 
-    for (const item of payload.items) {
+    for (const item of payloadItemsComVinculo) {
       if (item.itemOrdemServicoId) {
         const existingItem = await ensureItemBelongsToOrdem(ordemServicoId, item.itemOrdemServicoId, trx);
         if (["DIAGNOSTICADO", "AGUARDANDO_ORCAMENTO"].includes(existingItem.status_item)) {

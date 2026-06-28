@@ -9,7 +9,9 @@ import {
   createDiagnosticoV2,
   getOrdemServicoV2,
   listOperacionalV2,
+  registrarPrevisaoPecaV2,
   registrarComunicacaoWhatsAppV2,
+  retomarItemDaPecaV2,
   updateItemPagamentoV2,
   updateItemStatusV2,
 } from "../services/ordemServicoV2Service";
@@ -165,6 +167,53 @@ function buildDiagnosticoWhatsappMessage(order, diagnosticoTexto, pecasRecomenda
     .join("\n");
 }
 
+function formatDateTimeInput(value = "") {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function formatDateTimeLabel(value = "") {
+  if (!value) {
+    return "Sem previsao";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Sem previsao";
+  }
+
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getActivePartPreview(order, itemId) {
+  return (
+    (order?.previsoes_pecas || [])
+      .filter((previsao) => Number(previsao.item_ordem_servico_id) === Number(itemId) && previsao.status_previsao === "ATIVA")
+      .sort((left, right) => Number(right.id) - Number(left.id))[0] || null
+  );
+}
+
 function OperacaoV2Page() {
   const [ordens, setOrdens] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -173,7 +222,9 @@ function OperacaoV2Page() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [mechanicOpen, setMechanicOpen] = useState(false);
+  const [partOpen, setPartOpen] = useState(false);
   const [assigningItem, setAssigningItem] = useState(null);
+  const [partItem, setPartItem] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -190,6 +241,11 @@ function OperacaoV2Page() {
     descricao: "",
     pecas_recomendadas: "",
     mecanico_principal_id: "",
+  });
+  const [partForm, setPartForm] = useState({
+    descricao_peca: "",
+    previsao_chegada: "",
+    observacao: "",
   });
 
   const activeScope = searchScopes.find((item) => item.id === searchScope) || null;
@@ -305,6 +361,17 @@ function OperacaoV2Page() {
     setMechanicOpen(true);
   }
 
+  function openPartModal(item) {
+    const previsaoAtiva = getActivePartPreview(selectedOrder, item.id);
+    setPartItem(item);
+    setPartForm({
+      descricao_peca: previsaoAtiva?.descricao_peca || item.descricao || "",
+      previsao_chegada: formatDateTimeInput(previsaoAtiva?.previsao_chegada || item.previsao_peca_atual || ""),
+      observacao: previsaoAtiva?.observacao || "",
+    });
+    setPartOpen(true);
+  }
+
   async function refreshSelectedOrder(ordemId) {
     const detail = await getOrdemServicoV2(ordemId);
     setSelectedOrder(detail);
@@ -403,6 +470,66 @@ function OperacaoV2Page() {
       setFeedback("Servico atualizado e enviado para execucao.");
     } catch (requestError) {
       setError(requestError?.response?.data?.message || "Nao foi possivel vincular os mecanicos.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSalvarPrevisaoPeca() {
+    if (!selectedOrder || !partItem) {
+      return;
+    }
+
+    if (!partForm.descricao_peca.trim()) {
+      setError("Informe qual peca esta aguardando.");
+      return;
+    }
+
+    if (!partForm.previsao_chegada) {
+      setError("Informe a data e hora previstas para chegada da peca.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      await registrarPrevisaoPecaV2(selectedOrder.id, partItem.id, {
+        descricao_peca: partForm.descricao_peca.trim(),
+        previsao_chegada: partForm.previsao_chegada,
+        observacao: partForm.observacao.trim() || null,
+      });
+      await refreshSelectedOrder(selectedOrder.id);
+      setPartOpen(false);
+      setPartItem(null);
+      setFeedback("Item movido para aguardando peca com prazo registrado.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Nao foi possivel registrar a previsao da peca.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRetomarPeca(item) {
+    if (!selectedOrder) {
+      return;
+    }
+
+    const execucao = getExecucaoForItem(selectedOrder, item.id);
+    const statusDestino = execucao ? "EM_EXECUCAO" : "PRONTO_PARA_EXECUTAR";
+
+    setBusy(true);
+    setError("");
+
+    try {
+      await retomarItemDaPecaV2(selectedOrder.id, item.id, {
+        status_destino: statusDestino,
+        observacao: "Peca recebida e item retomado.",
+      });
+      await refreshSelectedOrder(selectedOrder.id);
+      setFeedback("Peca recebida e item devolvido ao fluxo da oficina.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Nao foi possivel retomar o item apos a chegada da peca.");
     } finally {
       setBusy(false);
     }
@@ -761,6 +888,12 @@ function OperacaoV2Page() {
                       <div className="operacao-service-copy">
                         <strong>{item.descricao}</strong>
                         <small>{item.status_item}</small>
+                        {item.status_item === "AGUARDANDO_PECA" ? (
+                          <p className="operacao-part-note">
+                            {getActivePartPreview(selectedOrder, item.id)?.descricao_peca || item.descricao} ate{" "}
+                            {formatDateTimeLabel(getActivePartPreview(selectedOrder, item.id)?.previsao_chegada || item.previsao_peca_atual)}
+                          </p>
+                        ) : null}
                         {getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao ? <p>{getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao}</p> : null}
                       </div>
                       <div className="row-actions stacked operacao-service-actions">
@@ -777,6 +910,20 @@ function OperacaoV2Page() {
                           <span>{getResponsaveisLabel(selectedOrder, item.id)}</span>
                           <AppIcon name="plus" size={16} />
                         </button>
+                        {item.status_item === "AGUARDANDO_PECA" ? (
+                          <>
+                            <button type="button" className="ghost-button operacao-part-button" onClick={() => openPartModal(item)} disabled={busy}>
+                              Atualizar prazo
+                            </button>
+                            <button type="button" className="secondary-button operacao-part-button" onClick={() => void handleRetomarPeca(item)} disabled={busy}>
+                              Peca chegou
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" className="ghost-button operacao-part-button" onClick={() => openPartModal(item)} disabled={busy}>
+                            Aguardar peca
+                          </button>
+                        )}
                       </div>
                     </article>
                   ))}
@@ -785,6 +932,59 @@ function OperacaoV2Page() {
             )}
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={partOpen}
+        onClose={() => setPartOpen(false)}
+        title="Aguardando peca"
+        subtitle={partItem ? partItem.descricao : "Informe qual item ficou pendente e a previsao de chegada."}
+        size="medium"
+        actions={
+          <>
+            <button type="button" className="ghost-button" onClick={() => setPartOpen(false)} disabled={busy}>
+              Fechar
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void handleSalvarPrevisaoPeca()}
+              disabled={busy || !partForm.descricao_peca.trim() || !partForm.previsao_chegada}
+            >
+              Ok - aguardando peca
+            </button>
+          </>
+        }
+      >
+        <div className="modal-stack">
+          <label className="field-label">
+            Peca aguardando
+            <input
+              value={partForm.descricao_peca}
+              placeholder="Ex.: Carburador, relacao, cabo..."
+              onChange={(event) => setPartForm((current) => ({ ...current, descricao_peca: event.target.value }))}
+            />
+          </label>
+
+          <label className="field-label">
+            Data e hora previstas
+            <input
+              type="datetime-local"
+              value={partForm.previsao_chegada}
+              onChange={(event) => setPartForm((current) => ({ ...current, previsao_chegada: event.target.value }))}
+            />
+          </label>
+
+          <label className="field-label">
+            Observacao
+            <textarea
+              rows={4}
+              value={partForm.observacao}
+              onChange={(event) => setPartForm((current) => ({ ...current, observacao: event.target.value }))}
+              placeholder="Opcional: fornecedor, urgencia ou algum detalhe"
+            />
+          </label>
+        </div>
       </Modal>
     </section>
   );

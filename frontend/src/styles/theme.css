@@ -809,6 +809,165 @@
   justify-content: space-between;
 }
 
+.orcamento-pendente-card {
+  align-items: center;
+}
+
+.orcamento-pendente-main {
+  min-width: 0;
+}
+
+.orcamento-pendente-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.orcamento-pendente-meta {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  text-align: right;
+}
+
+.orcamento-pendente-meta strong {
+  font-size: 1rem;
+}
+
+.orcamento-pendente-meta span {
+  color: var(--text-soft);
+  font-size: 0.98rem;
+}
+
+.orcamento-pendente-meta .status-badge {
+  justify-self: end;
+}
+
+.orcamento-pendente-edit {
+  flex-shrink: 0;
+}
+
+.auth-modal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-item-compact {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.auth-item-compact.is-available {
+  border-color: rgba(65, 179, 84, 0.24);
+  background: rgba(65, 179, 84, 0.07);
+}
+
+.auth-item-compact.is-waiting-part {
+  border-color: rgba(255, 179, 71, 0.24);
+  background: rgba(255, 179, 71, 0.06);
+}
+
+.auth-item-compact-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.auth-item-compact-head strong {
+  min-width: 0;
+}
+
+.auth-item-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-choice-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.auth-choice-icon.is-available.active {
+  background: linear-gradient(135deg, rgba(65, 179, 84, 0.98), rgba(83, 209, 140, 0.84));
+  color: #f3fff6;
+  border-color: rgba(65, 179, 84, 0.28);
+}
+
+.auth-choice-icon.is-waiting.active {
+  background: rgba(255, 179, 71, 0.18);
+  color: #ffe5b3;
+  border-color: rgba(255, 179, 71, 0.28);
+}
+
+.auth-item-inline-fields {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px);
+}
+
+.auth-item-inline-fields .field-label {
+  gap: 0;
+}
+
+.orcamento-sent-icon-button {
+  width: 54px;
+  height: 54px;
+}
+
+.orcamento-parts-panel {
+  margin-top: 20px;
+}
+
+.orcamento-part-card {
+  align-items: flex-start;
+}
+
+.orcamento-part-card-copy {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.orcamento-part-lines {
+  display: grid;
+  gap: 8px;
+}
+
+.orcamento-part-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 196, 92, 0.07);
+  border: 1px solid rgba(255, 196, 92, 0.14);
+}
+
+.orcamento-part-line span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.orcamento-part-line small {
+  color: var(--text-soft);
+}
+
+.orcamento-part-line strong {
+  color: #ffe08f;
+}
+
 .stats-grid,
 .card-grid,
 .metrics-grid {
@@ -2312,6 +2471,52 @@
   border: 1px solid rgba(255, 107, 107, 0.22);
 }
 
+.office-part-list {
+  display: grid;
+  gap: 8px;
+}
+
+.office-part-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.office-part-line span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.office-part-line small {
+  color: #fff2c5;
+  flex-shrink: 0;
+}
+
+.office-part-countdown {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding-top: 2px;
+}
+
+.office-part-countdown span {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.office-part-countdown strong {
+  color: #ffe8aa;
+  font-size: 1rem;
+}
+
 .queue-order-badge {
   min-width: 52px;
   height: 52px;
@@ -3063,6 +3268,15 @@
 .operacao-payment-icon,
 .operacao-responsavel-button {
   min-height: 48px;
+}
+
+.operacao-part-button {
+  min-height: 48px;
+  width: 100%;
+}
+
+.operacao-part-note {
+  color: #ffd99b;
 }
 
 .operacao-equipe-row {

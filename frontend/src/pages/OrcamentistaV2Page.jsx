@@ -8,7 +8,9 @@ import {
   getOrdemServicoV2,
   listItemSuggestionsV2,
   listOrdensServicoV2,
+  registrarPrevisaoPecaV2,
   registrarComunicacaoWhatsAppV2,
+  retomarItemDaPecaV2,
   updateItemAutorizacaoV2,
   updateOrcamentoStatusV2,
 } from "../services/ordemServicoV2Service";
@@ -173,6 +175,167 @@ function formatDateLabel(value = "") {
   return date.toLocaleString("pt-BR");
 }
 
+function formatDateTimeInput(value = "") {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function getAuthorizationItems(order) {
+  const latestOrcamento = getLatestOrcamento(order);
+  const orderItems = (order?.items || []).filter((item) => item.descricao && item.descricao !== "Diagnostico inicial" && !["CONCLUIDO", "CANCELADO"].includes(item.status_item));
+  const usedOrderItemIds = new Set();
+
+  return (latestOrcamento?.items || [])
+    .filter((item) => item.descricao)
+    .map((item, index) => {
+      const normalizedDescricao = String(item.descricao || "").trim().toLowerCase();
+      const linkedOrderItem =
+        orderItems.find((orderItem) => {
+          const matches = Number(orderItem.id) === Number(item.item_ordem_servico_id);
+          if (matches && !usedOrderItemIds.has(orderItem.id)) {
+            usedOrderItemIds.add(orderItem.id);
+            return true;
+          }
+
+          return false;
+        }) ||
+        orderItems.find((orderItem) => {
+          const matches = String(orderItem.descricao || "").trim().toLowerCase() === normalizedDescricao;
+          if (matches && !usedOrderItemIds.has(orderItem.id)) {
+            usedOrderItemIds.add(orderItem.id);
+            return true;
+          }
+
+          return false;
+        }) ||
+        orderItems.find((orderItem) => {
+          const orderDescricao = String(orderItem.descricao || "").trim().toLowerCase();
+          const matches = orderDescricao.includes(normalizedDescricao) || normalizedDescricao.includes(orderDescricao);
+          if (matches && !usedOrderItemIds.has(orderItem.id)) {
+            usedOrderItemIds.add(orderItem.id);
+            return true;
+          }
+
+          return false;
+        }) ||
+        orderItems.find((orderItem, orderIndex) => {
+          const matches = orderIndex === index;
+          if (matches && !usedOrderItemIds.has(orderItem.id)) {
+            usedOrderItemIds.add(orderItem.id);
+            return true;
+          }
+
+          return false;
+        }) ||
+        null;
+
+      return {
+        item_id: linkedOrderItem?.id || null,
+        descricao: item.descricao,
+        descricao_peca: item.descricao,
+        previsao_chegada: formatDateTimeInput(linkedOrderItem?.previsao_peca_atual || ""),
+        observacao: item.observacao || "",
+        tem_peca: linkedOrderItem?.status_item === "AGUARDANDO_PECA" ? false : true,
+      };
+    })
+    .filter((item) => item.item_id);
+}
+
+function getActivePartPreviews(order) {
+  const activePreviews = (order?.previsoes_pecas || [])
+    .filter((previsao) => previsao.status_previsao === "ATIVA")
+    .sort((left, right) => {
+      const leftTs = left.previsao_chegada ? new Date(left.previsao_chegada).getTime() : Number.MAX_SAFE_INTEGER;
+      const rightTs = right.previsao_chegada ? new Date(right.previsao_chegada).getTime() : Number.MAX_SAFE_INTEGER;
+      return leftTs - rightTs;
+    });
+
+  if (activePreviews.length) {
+    return activePreviews;
+  }
+
+  return (order?.items || [])
+    .filter((item) => item.status_item === "AGUARDANDO_PECA")
+    .map((item) => ({
+      id: `fallback-${item.id}`,
+      item_ordem_servico_id: item.id,
+      descricao_peca: item.descricao,
+      previsao_chegada: item.previsao_peca_atual,
+      observacao: item.observacoes || null,
+      status_previsao: "ATIVA",
+    }));
+}
+
+function hasAguardandoPeca(order) {
+  return getActivePartPreviews(order).length > 0;
+}
+
+function formatDateTimeCompact(value = "") {
+  if (!value) {
+    return "Sem prazo";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Sem prazo";
+  }
+
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatCountdown(value = "", nowTs) {
+  if (!value) {
+    return "Sem prazo";
+  }
+
+  const targetTs = new Date(value).getTime();
+
+  if (Number.isNaN(targetTs)) {
+    return "Sem prazo";
+  }
+
+  const diffMs = targetTs - nowTs;
+
+  if (diffMs <= 0) {
+    return "Vencido";
+  }
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return `${minutes}m`;
+}
+
 function buildWhatsappTextoOrcamento(ordem, orcamento) {
   const items = (orcamento?.items || [])
     .map((item) => `- ${item.descricao}: ${item.quantidade} x R$ ${toMoney(item.valor_peca || item.valor_total || 0)} = R$ ${toMoney(item.valor_total || 0)}`)
@@ -210,20 +373,36 @@ function OrcamentistaV2Page() {
   const [ordens, setOrdens] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [authorizationOpen, setAuthorizationOpen] = useState(false);
+  const [partsControlOpen, setPartsControlOpen] = useState(false);
+  const [authorizationLoading, setAuthorizationLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [orcamentoForm, setOrcamentoForm] = useState(initialOrcamentoForm);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [itemSuggestions, setItemSuggestions] = useState([]);
+  const [authorizationItems, setAuthorizationItems] = useState([]);
+  const [partsControlOrder, setPartsControlOrder] = useState(null);
+  const [partsControlItems, setPartsControlItems] = useState([]);
 
   async function loadOrdens() {
     const data = await listOrdensServicoV2();
-    setOrdens(
-      data.filter((ordem) =>
-        ["EM_DIAGNOSTICO", "EM_ORCAMENTO", "AGUARDANDO_CLIENTE", "EM_EXECUCAO", "ARQUIVADA"].includes(ordem.status_geral),
-      ),
+    const ordensFiltradas = data.filter((ordem) =>
+      ["EM_DIAGNOSTICO", "EM_ORCAMENTO", "AGUARDANDO_CLIENTE", "AGUARDANDO_PECA", "EM_EXECUCAO", "ARQUIVADA"].includes(ordem.status_geral),
     );
+
+    const ordensDetalhadas = await Promise.all(
+      ordensFiltradas.map(async (ordem) => {
+        try {
+          return await getOrdemServicoV2(ordem.id);
+        } catch {
+          return ordem;
+        }
+      }),
+    );
+
+    setOrdens(ordensDetalhadas);
   }
 
   async function loadItemSuggestions(query = "") {
@@ -267,11 +446,23 @@ function OrcamentistaV2Page() {
   const ordensEnviadas = useMemo(
     () =>
       ordens
-        .filter((ordem) => getLatestOrcamento(ordem)?.status_orcamento === "ENVIADO")
+        .filter((ordem) => getLatestOrcamento(ordem)?.status_orcamento === "ENVIADO" && !hasAguardandoPeca(ordem))
         .sort((left, right) => {
           const leftDate = new Date(getLatestOrcamento(left)?.enviado_cliente_em || 0).getTime();
           const rightDate = new Date(getLatestOrcamento(right)?.enviado_cliente_em || 0).getTime();
           return rightDate - leftDate;
+        }),
+    [ordens],
+  );
+
+  const ordensAguardandoPecas = useMemo(
+    () =>
+      ordens
+        .filter((ordem) => hasAguardandoPeca(ordem))
+        .sort((left, right) => {
+          const leftTime = new Date(getActivePartPreviews(left)[0]?.previsao_chegada || 0).getTime() || Number.MAX_SAFE_INTEGER;
+          const rightTime = new Date(getActivePartPreviews(right)[0]?.previsao_chegada || 0).getTime() || Number.MAX_SAFE_INTEGER;
+          return leftTime - rightTime;
         }),
     [ordens],
   );
@@ -321,6 +512,75 @@ function OrcamentistaV2Page() {
             ),
     });
     setDetailOpen(true);
+  }
+
+  async function openAuthorizationFlow(ordemId) {
+    setError("");
+    setAuthorizationItems([]);
+    setAuthorizationOpen(true);
+    setAuthorizationLoading(true);
+
+    try {
+      let detail = await getOrdemServicoV2(ordemId);
+      let authorizationList = getAuthorizationItems(detail);
+
+      if (!authorizationList.length) {
+        const latestOrcamento = getLatestOrcamento(detail);
+
+        if (latestOrcamento?.items?.length) {
+          await createOrcamentoV2(ordemId, {
+            numero_externo: latestOrcamento.numero_externo,
+            data_prometida: detail.data_prometida || null,
+            observacoes: latestOrcamento.observacoes || "",
+            status_orcamento: latestOrcamento.status_orcamento || "ENVIADO",
+            items: latestOrcamento.items.map((item) => ({
+              item_ordem_servico_id: item.item_ordem_servico_id || null,
+              descricao: item.descricao,
+              quantidade: Number(item.quantidade || 1),
+              valor_peca: Number(item.valor_peca || 0),
+              valor_mao_obra: Number(item.valor_mao_obra || 0),
+              valor_total: Number(item.valor_total || 0),
+              observacao: item.observacao || null,
+              origem: item.origem || "INCLUIDO_ORCAMENTISTA",
+              autorizacao_status: item.autorizacao_status || "AGUARDANDO_RESPOSTA",
+            })),
+          });
+
+          detail = await getOrdemServicoV2(ordemId);
+          authorizationList = getAuthorizationItems(detail);
+        }
+      }
+
+      setSelectedOrder(detail);
+      setAuthorizationItems(authorizationList);
+
+      if (!authorizationList.length) {
+        setError("Nao encontrei itens para autorizar neste orcamento.");
+      }
+    } catch (requestError) {
+      setAuthorizationOpen(false);
+      setError(requestError?.response?.data?.message || "Nao foi possivel abrir a autorizacao.");
+    } finally {
+      setAuthorizationLoading(false);
+    }
+  }
+
+  async function openPartsControl(ordemId) {
+    setError("");
+    const detail = await getOrdemServicoV2(ordemId);
+    const activeParts = getActivePartPreviews(detail);
+
+    setPartsControlOrder(detail);
+    setPartsControlItems(
+      activeParts.map((part) => ({
+        preview_id: part.id,
+        item_id: part.item_ordem_servico_id,
+        descricao_peca: part.descricao_peca,
+        previsao_chegada: formatDateTimeInput(part.previsao_chegada || ""),
+        observacao: part.observacao || "",
+      })),
+    );
+    setPartsControlOpen(true);
   }
 
   function updateOrcamentoItem(index, field, value) {
@@ -454,6 +714,171 @@ function OrcamentistaV2Page() {
     }
   }
 
+  function updateAuthorizationItem(itemId, field, value) {
+    setAuthorizationItems((current) =>
+      current.map((item) => {
+        if (item.item_id !== itemId) {
+          return item;
+        }
+
+        if (field === "tem_peca") {
+          return {
+            ...item,
+            tem_peca: value,
+            previsao_chegada: value ? "" : item.previsao_chegada,
+            observacao: value ? "" : item.observacao,
+          };
+        }
+
+        return {
+          ...item,
+          [field]: value,
+        };
+      }),
+    );
+  }
+
+  function handleMarkAllAuthorizationAsAvailable() {
+    setAuthorizationItems((current) =>
+      current.map((item) => ({
+        ...item,
+        tem_peca: true,
+        previsao_chegada: "",
+        observacao: "",
+      })),
+    );
+  }
+
+  async function handleConfirmarAutorizacao() {
+    if (!selectedOrder) {
+      return;
+    }
+
+    if (!authorizationItems.length) {
+      setError("Nao ha itens do orcamento para enviar para a oficina.");
+      return;
+    }
+
+    const itemComPrazoInvalido = authorizationItems.find((item) => !item.tem_peca && !item.previsao_chegada);
+
+    if (itemComPrazoInvalido) {
+      setError(`Informe a data e hora da peca para ${itemComPrazoInvalido.descricao}.`);
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      for (const item of authorizationItems) {
+        await updateItemAutorizacaoV2(selectedOrder.id, item.item_id, "AUTORIZADO");
+
+        if (!item.tem_peca) {
+          await registrarPrevisaoPecaV2(selectedOrder.id, item.item_id, {
+            descricao_peca: item.descricao_peca.trim() || item.descricao,
+            previsao_chegada: item.previsao_chegada,
+            observacao: item.observacao.trim() || null,
+          });
+        }
+      }
+
+      await loadOrdens();
+      setAuthorizationOpen(false);
+      setSelectedOrder(null);
+      setAuthorizationItems([]);
+      setFeedback(
+        authorizationItems.every((item) => item.tem_peca)
+          ? "Autorizacao registrada e moto enviada para a fila da oficina."
+          : "Autorizacao registrada e moto enviada para aguardando pecas.",
+      );
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Nao foi possivel confirmar a autorizacao.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSalvarPrevisoesPeca() {
+    if (!partsControlOrder || !partsControlItems.length) {
+      return;
+    }
+
+    const invalidItem = partsControlItems.find((item) => !item.previsao_chegada);
+
+    if (invalidItem) {
+      setError(`Informe a data e hora para ${invalidItem.descricao_peca}.`);
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      for (const item of partsControlItems) {
+        await registrarPrevisaoPecaV2(partsControlOrder.id, item.item_id, {
+          descricao_peca: item.descricao_peca,
+          previsao_chegada: item.previsao_chegada,
+          observacao: item.observacao || null,
+        });
+      }
+
+      await loadOrdens();
+      setPartsControlOpen(false);
+      setPartsControlOrder(null);
+      setPartsControlItems([]);
+      setFeedback("Previsao de peca atualizada.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Nao foi possivel atualizar a previsao das pecas.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleConfirmarChegadaPeca(itemId) {
+    if (!partsControlOrder) {
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      await retomarItemDaPecaV2(partsControlOrder.id, itemId, {
+        status_destino: "PRONTO_PARA_EXECUTAR",
+        observacao: "Peca recebida pelo orcamentista.",
+      });
+
+      const detail = await getOrdemServicoV2(partsControlOrder.id);
+      const activeParts = getActivePartPreviews(detail);
+
+      await loadOrdens();
+
+      if (!activeParts.length) {
+        setPartsControlOpen(false);
+        setPartsControlOrder(null);
+        setPartsControlItems([]);
+        setFeedback("Todas as pecas chegaram e a moto voltou para a fila da oficina.");
+        return;
+      }
+
+      setPartsControlOrder(detail);
+      setPartsControlItems(
+        activeParts.map((part) => ({
+          preview_id: part.id,
+          item_id: part.item_ordem_servico_id,
+          descricao_peca: part.descricao_peca,
+          previsao_chegada: formatDateTimeInput(part.previsao_chegada || ""),
+          observacao: part.observacao || "",
+        })),
+      );
+      setFeedback("Peca recebida e lista atualizada.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Nao foi possivel confirmar a chegada da peca.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function marcarOrcamentoComoEnviado(orcamentoId, mensagemPreparada) {
     await registrarComunicacaoWhatsAppV2(selectedOrder.id, {
       tipo_comunicacao: "ORCAMENTISTA_CLIENTE",
@@ -577,21 +1002,37 @@ function OrcamentistaV2Page() {
               </div>
             </div>
 
-            {ordensPendentes.map((ordem) => (
-              <article className="row-card" key={ordem.id}>
-                <div>
-                  <strong>{ordem.cliente_nome}</strong>
-                  <p>
-                    {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
-                  </p>
-                </div>
-                <div className="row-actions stacked">
-                  <button type="button" className="ghost-button" onClick={() => openOrderDetail(ordem.id)}>
-                    Finalizar orcamento
-                  </button>
-                </div>
-              </article>
-            ))}
+            {ordensPendentes.map((ordem) => {
+              const latestOrcamento = getLatestOrcamento(ordem);
+
+              return (
+                <article className="row-card orcamento-pendente-card" key={ordem.id}>
+                  <div className="orcamento-pendente-main">
+                    <strong>{ordem.cliente_nome}</strong>
+                    <p>
+                      {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
+                    </p>
+                  </div>
+
+                  <div className="orcamento-pendente-side">
+                    <div className="orcamento-pendente-meta">
+                      <strong>{formatExternalNumber(latestOrcamento?.numero_externo) || "Sem numero"}</strong>
+                      <span>R$ {toMoney(latestOrcamento?.valor_total || 0)}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="icon-button orcamento-pendente-edit"
+                      onClick={() => openOrderDetail(ordem.id)}
+                      aria-label={`Editar orcamento de ${ordem.cliente_nome}`}
+                      title="Editar orcamento"
+                    >
+                      <AppIcon name="pencil" size={18} />
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
             {ordensPendentes.length === 0 ? <div className="empty-state">Nenhuma ordem pendente de tratamento comercial.</div> : null}
           </div>
 
@@ -613,14 +1054,29 @@ function OrcamentistaV2Page() {
                     <p>
                       {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
                     </p>
-                    <small>{latestOrcamento?.numero_externo || "Sem numero"} - enviado ha {formatElapsedTime(latestOrcamento?.enviado_cliente_em, clockNow)}</small>
+                    <small>
+                      {formatExternalNumber(latestOrcamento?.numero_externo) || "Sem numero"} - enviado ha{" "}
+                      {formatElapsedTime(latestOrcamento?.enviado_cliente_em, clockNow)}
+                    </small>
                   </div>
                   <div className="row-actions stacked">
-                    <StatusBadge tone={getStatusTone(latestOrcamento?.status_orcamento || "ENVIADO")}>
-                      {latestOrcamento?.status_orcamento || "ENVIADO"}
-                    </StatusBadge>
-                    <button type="button" className="ghost-button" onClick={() => openOrderDetail(ordem.id)}>
-                      Abrir
+                    <button
+                      type="button"
+                      className="icon-button success-button orcamento-sent-icon-button"
+                      onClick={() => void openAuthorizationFlow(ordem.id)}
+                      aria-label={`Autorizar orcamento de ${ordem.cliente_nome}`}
+                      title="Autorizar"
+                    >
+                      <AppIcon name="check" size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button orcamento-sent-icon-button"
+                      onClick={() => openOrderDetail(ordem.id)}
+                      aria-label={`Abrir orcamento de ${ordem.cliente_nome}`}
+                      title="Abrir"
+                    >
+                      <AppIcon name="pencil" size={18} />
                     </button>
                   </div>
                 </article>
@@ -629,7 +1085,190 @@ function OrcamentistaV2Page() {
             {ordensEnviadas.length === 0 ? <div className="empty-state">Nenhum orcamento enviado no momento.</div> : null}
           </div>
         </div>
+
+        <div className="table-list orcamento-parts-panel">
+          <div className="workspace-heading">
+            <div>
+              <p className="eyebrow">Pecas</p>
+              <h2>Aguardando pecas</h2>
+            </div>
+          </div>
+
+          {ordensAguardandoPecas.map((ordem) => {
+            const activeParts = getActivePartPreviews(ordem);
+
+            return (
+              <article className="row-card orcamento-part-card" key={`parts-${ordem.id}`}>
+                <div className="orcamento-part-card-copy">
+                  <strong>{ordem.cliente_nome}</strong>
+                  <p>
+                    {ordem.motocicleta_modelo} {ordem.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}
+                  </p>
+                  <div className="orcamento-part-lines">
+                    {activeParts.map((part) => (
+                      <div className="orcamento-part-line" key={`${ordem.id}-${part.id}`}>
+                        <span>{part.descricao_peca}</span>
+                        <small>{formatDateTimeCompact(part.previsao_chegada)}</small>
+                        <strong>{formatCountdown(part.previsao_chegada, clockNow)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="row-actions stacked">
+                  <button
+                    type="button"
+                    className="icon-button orcamento-sent-icon-button"
+                    onClick={() => void openPartsControl(ordem.id)}
+                    aria-label={`Atualizar previsao de pecas de ${ordem.cliente_nome}`}
+                    title="Atualizar prazo"
+                  >
+                    <AppIcon name="clock" size={18} />
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+          {ordensAguardandoPecas.length === 0 ? <div className="empty-state">Nenhuma moto aguardando pecas no momento.</div> : null}
+        </div>
       </div>
+
+      <Modal
+        open={authorizationOpen}
+        onClose={() => setAuthorizationOpen(false)}
+        title={selectedOrder ? `Autorizacao - ${selectedOrder.cliente_nome}` : "Autorizacao"}
+        subtitle={selectedOrder ? `${selectedOrder.motocicleta_modelo} - ${selectedOrder.motocicleta_placa || "Sem placa"}` : ""}
+        size="large"
+        actions={
+          <>
+            <button type="button" className="ghost-button" onClick={() => setAuthorizationOpen(false)} disabled={busy}>
+              Fechar
+            </button>
+            <button type="button" className="primary-button" onClick={() => void handleConfirmarAutorizacao()} disabled={busy}>
+              Enviar para oficina
+            </button>
+          </>
+        }
+      >
+        {selectedOrder || authorizationLoading ? (
+          <div className="modal-stack">
+            {authorizationLoading ? <div className="empty-state">Carregando itens do orcamento...</div> : null}
+            {!authorizationLoading && authorizationItems.length ? (
+              <div className="auth-modal-toolbar">
+                <span className="badge badge-info">{authorizationItems.length} item(ns)</span>
+                <button
+                  type="button"
+                  className="icon-button success-button"
+                  onClick={handleMarkAllAuthorizationAsAvailable}
+                  title="Tem tudo"
+                  aria-label="Marcar todos os itens como disponiveis"
+                >
+                  <AppIcon name="check" size={18} />
+                </button>
+              </div>
+            ) : null}
+            {!authorizationLoading
+              ? authorizationItems.map((item) => (
+                  <article className={`auth-item-compact ${item.tem_peca ? "is-available" : "is-waiting-part"}`} key={`auth-${item.item_id}`}>
+                    <div className="auth-item-compact-head">
+                      <strong>{item.descricao}</strong>
+                      <div className="auth-item-icon-row">
+                        <button
+                          type="button"
+                          className={`icon-button auth-choice-icon is-available ${item.tem_peca ? "active" : ""}`}
+                          onClick={() => updateAuthorizationItem(item.item_id, "tem_peca", true)}
+                          title="Tem peca"
+                          aria-label={`Marcar ${item.descricao} com peca disponivel`}
+                        >
+                          <AppIcon name="check" size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          className={`icon-button auth-choice-icon is-waiting ${!item.tem_peca ? "active" : ""}`}
+                          onClick={() => updateAuthorizationItem(item.item_id, "tem_peca", false)}
+                          title="Nao tem peca"
+                          aria-label={`Marcar ${item.descricao} sem peca disponivel`}
+                        >
+                          <AppIcon name="clock" size={18} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {!item.tem_peca ? (
+                      <div className="auth-item-inline-fields">
+                        <label className="field-label">
+                          <input
+                            type="datetime-local"
+                            value={item.previsao_chegada}
+                            onChange={(event) => updateAuthorizationItem(item.item_id, "previsao_chegada", event.target.value)}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                  </article>
+                ))
+              : null}
+            {!authorizationLoading && !authorizationItems.length ? <div className="empty-state">Nenhum item encontrado para autorizacao.</div> : null}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={partsControlOpen}
+        onClose={() => setPartsControlOpen(false)}
+        title={partsControlOrder ? `Pecas - ${partsControlOrder.cliente_nome}` : "Pecas"}
+        subtitle={partsControlOrder ? `${partsControlOrder.motocicleta_modelo} - ${partsControlOrder.motocicleta_placa || "Sem placa"}` : ""}
+        size="large"
+        actions={
+          <>
+            <button type="button" className="ghost-button" onClick={() => setPartsControlOpen(false)} disabled={busy}>
+              Fechar
+            </button>
+            <button type="button" className="primary-button" onClick={() => void handleSalvarPrevisoesPeca()} disabled={busy}>
+              Salvar prazo
+            </button>
+          </>
+        }
+      >
+        <div className="modal-stack">
+          {partsControlItems.map((item) => (
+            <article className="auth-item-compact is-waiting-part" key={`part-control-${item.item_id}`}>
+              <div className="auth-item-compact-head">
+                <strong>{item.descricao_peca}</strong>
+                <div className="auth-item-icon-row">
+                  <span className="badge badge-warning">{formatCountdown(item.previsao_chegada, clockNow)}</span>
+                  <button
+                    type="button"
+                    className="icon-button success-button"
+                    onClick={() => void handleConfirmarChegadaPeca(item.item_id)}
+                    title="Peca chegou"
+                    aria-label={`Confirmar chegada da peca ${item.descricao_peca}`}
+                    disabled={busy}
+                  >
+                    <AppIcon name="check" size={18} />
+                  </button>
+                </div>
+              </div>
+              <div className="auth-item-fields">
+                <label className="field-label">
+                  Data e hora
+                  <input
+                    type="datetime-local"
+                    value={item.previsao_chegada}
+                    onChange={(event) =>
+                      setPartsControlItems((current) =>
+                        current.map((entry) =>
+                          entry.item_id === item.item_id ? { ...entry, previsao_chegada: event.target.value } : entry,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+              </div>
+            </article>
+          ))}
+          {!partsControlItems.length ? <div className="empty-state">Nenhuma peca pendente para ajustar.</div> : null}
+        </div>
+      </Modal>
 
       <Modal
         open={detailOpen}

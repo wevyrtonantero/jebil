@@ -14,6 +14,68 @@ function getItensPlanejados(ordem) {
   return (ordem.items || []).filter((item) => item.descricao && item.descricao !== "Diagnostico inicial");
 }
 
+function getActivePartPreviews(ordem) {
+  return (ordem.previsoes_pecas || [])
+    .filter((previsao) => previsao.status_previsao === "ATIVA")
+    .sort((left, right) => {
+      const leftTs = left.previsao_chegada ? new Date(left.previsao_chegada).getTime() : Number.MAX_SAFE_INTEGER;
+      const rightTs = right.previsao_chegada ? new Date(right.previsao_chegada).getTime() : Number.MAX_SAFE_INTEGER;
+      return leftTs - rightTs;
+    });
+}
+
+function formatDateTimeLabel(value = "") {
+  if (!value) {
+    return "Sem previsao";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Sem previsao";
+  }
+
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatCountdown(value = "", nowTs) {
+  if (!value) {
+    return "Sem contagem";
+  }
+
+  const targetTs = new Date(value).getTime();
+
+  if (Number.isNaN(targetTs)) {
+    return "Sem contagem";
+  }
+
+  const diffMs = targetTs - nowTs;
+
+  if (diffMs <= 0) {
+    return "Prazo vencido";
+  }
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}min`;
+  }
+
+  return `${minutes}min`;
+}
+
 function getNomeCurto(nome = "") {
   const partes = String(nome).trim().split(/\s+/).filter(Boolean);
 
@@ -46,13 +108,18 @@ function isAguardandoAutorizacao(ordem) {
   }
 
   const latestDiagnostico = [...(ordem.diagnosticos || [])].sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
-  const hasOrcamento = (ordem.orcamentos || []).length > 0;
+  const latestOrcamento = [...(ordem.orcamentos || [])].sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
 
-  return ordem.status_geral === "ARQUIVADA" && latestDiagnostico?.status_diagnostico === "CONCLUIDO" && !hasOrcamento;
+  return (
+    ordem.status_geral === "ARQUIVADA" &&
+    latestDiagnostico?.status_diagnostico === "CONCLUIDO" &&
+    ["RASCUNHO", "PENDENTE_ENVIO", "ENVIADO", "PARCIAL"].includes(latestOrcamento?.status_orcamento || "RASCUNHO")
+  );
 }
 
 function OficinaAdminPage() {
   const [ordens, setOrdens] = useState([]);
+  const [clockNow, setClockNow] = useState(() => Date.now());
 
   const loadOrdens = useCallback(async () => {
     const data = await listOperacionalV2(50);
@@ -75,6 +142,14 @@ function OficinaAdminPage() {
     return () => window.clearInterval(intervalId);
   }, [loadOrdens]);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setClockNow(Date.now());
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   useRealtimeRefresh(loadOrdens);
 
   const aguardandoDiagnostico = useMemo(
@@ -86,8 +161,8 @@ function OficinaAdminPage() {
     () =>
       ordens.filter(
         (ordem) =>
-          isServicoRapido(ordem) &&
           podeEntrarNaOficina(ordem) &&
+          !isAguardandoDiagnostico(ordem) &&
           !(ordem.items || []).some((item) => item.status_item === "AGUARDANDO_PECA") &&
           (ordem.items || []).some((item) => item.status_item === "PRONTO_PARA_EXECUTAR"),
       ),
@@ -218,26 +293,49 @@ function OficinaAdminPage() {
           </div>
 
           <div className="office-queue-list">
-            {aguardandoPecas.map((ordem) => (
-              <article className="queue-card office-queue-card" key={ordem.id}>
-                <div className="office-queue-head">
-                  <div className="office-queue-identification">
-                    <div>
-                      <strong>{getNomeCurto(ordem.cliente_nome)}</strong>
-                      <p>
-                        {ordem.motocicleta_modelo}
-                        {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
-                      </p>
+            {aguardandoPecas.map((ordem) => {
+              const previsoesAtivas = getActivePartPreviews(ordem);
+              const proximaPrevisao = previsoesAtivas[0] || null;
+
+              return (
+                <article className="queue-card office-queue-card" key={ordem.id}>
+                  <div className="office-queue-head">
+                    <div className="office-queue-identification">
+                      <div>
+                        <strong>{getNomeCurto(ordem.cliente_nome)}</strong>
+                        <p>
+                          {ordem.motocicleta_modelo}
+                          {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="office-queue-tools">
+                      {isAtendimentoPrioritario(ordem) ? <span className="office-priority-pill">Prioritario</span> : null}
                     </div>
                   </div>
-                  <div className="office-queue-tools">
-                    {isAtendimentoPrioritario(ordem) ? <span className="office-priority-pill">Prioritario</span> : null}
-                  </div>
-                </div>
 
-                <small>{getResumoItens(ordem) || "Sem itens informados."}</small>
-              </article>
-            ))}
+                  {previsoesAtivas.length ? (
+                    <div className="office-part-list">
+                      {previsoesAtivas.map((previsao) => (
+                        <div className="office-part-line" key={previsao.id}>
+                          <span>{previsao.descricao_peca}</span>
+                          <small>{formatDateTimeLabel(previsao.previsao_chegada)}</small>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <small>{getResumoItens(ordem) || "Sem itens informados."}</small>
+                  )}
+
+                  {proximaPrevisao?.previsao_chegada ? (
+                    <div className="office-part-countdown">
+                      <span>Chegada prevista</span>
+                      <strong>{formatCountdown(proximaPrevisao.previsao_chegada, clockNow)}</strong>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
             {aguardandoPecas.length === 0 ? <div className="empty-state">Nenhuma moto aguardando pecas.</div> : null}
           </div>
         </div>
