@@ -58,6 +58,7 @@ async function ensureClienteEMotocicleta(payload) {
 }
 
 async function ensureNoActiveOrderForMotocicleta(motocicletaId, trx = db) {
+  await closeFinishedQuickServiceOrdersForMotocicleta(motocicletaId, trx);
   const activeOrder = await ordemServicoV2Repository.findActiveByMotocicletaId(motocicletaId, trx);
 
   if (!activeOrder) {
@@ -73,6 +74,42 @@ async function ensureNoActiveOrderForMotocicleta(motocicletaId, trx = db) {
       existingOrderStatus: activeOrder.status_geral,
     },
   );
+}
+
+async function closeFinishedQuickServiceOrdersForMotocicleta(motocicletaId, trx = db) {
+  const staleOrders = await trx("ordens_servico")
+    .where("motocicleta_id", motocicletaId)
+    .whereNotNull("legado_atendimento_id")
+    .whereIn("status_geral", ["PRONTA_PARA_RETIRADA", "PARCIALMENTE_CONCLUIDA"])
+    .whereNotExists(function onlyOpenItems() {
+      this.select(1)
+        .from("itens_ordem_servico")
+        .whereRaw("itens_ordem_servico.ordem_servico_id = ordens_servico.id")
+        .whereNotIn("itens_ordem_servico.status_item", ["CONCLUIDO", "CANCELADO"]);
+    })
+    .select("id", "legado_atendimento_id");
+
+  for (const ordem of staleOrders) {
+    await trx("ordens_servico")
+      .where({ id: ordem.id })
+      .update({
+        status_geral: "ARQUIVADA",
+        arquivada_em: db.fn.now(),
+        atualizado_em: db.fn.now(),
+      });
+
+    await trx("atendimentos")
+      .where({ id: ordem.legado_atendimento_id })
+      .whereNotIn("status", ["FINALIZADO", "CANCELADO"])
+      .update({
+        status: "FINALIZADO",
+        servico_concluido_em: db.fn.now(),
+        liberado_retirada_em: db.fn.now(),
+        retirada_confirmada_em: db.fn.now(),
+        finalizado_em: db.fn.now(),
+        atualizado_em: db.fn.now(),
+      });
+  }
 }
 
 function normalizeMySqlDateTime(value) {

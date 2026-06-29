@@ -24,10 +24,24 @@ import { formatCpf, formatPhone, formatPlate } from "../utils/formatters";
 const initialItem = () => ({
   descricao: "",
   quantidade: "1",
-  valor_unitario: "0.00",
-  valor_total: "0.00",
+  valor_unitario: "",
+  valor_total: "",
   pagamento_status: "PENDENTE",
 });
+
+const colorOptions = [
+  "Preta",
+  "Branca",
+  "Prata",
+  "Cinza",
+  "Azul",
+  "Vermelha",
+  "Verde",
+  "Amarela",
+  "Laranja",
+  "Marrom",
+  "Bege",
+];
 
 const createInitialForm = () => ({
   nome: "",
@@ -50,7 +64,7 @@ const createInitialForm = () => ({
 });
 
 function resolveColorFieldTheme(value) {
-  const normalized = value.trim().toLowerCase();
+  const normalized = String(value ?? "").trim().toLowerCase();
 
   if (!normalized) {
     return null;
@@ -101,7 +115,15 @@ function toMoney(value) {
 }
 
 function calculateItemTotal(quantidade, valorUnitario) {
+  if (!hasFilledValue(quantidade) || !hasFilledValue(valorUnitario)) {
+    return "";
+  }
+
   return toMoney(Number(quantidade || 0) * Number(valorUnitario || 0));
+}
+
+function hasFilledValue(value) {
+  return String(value ?? "").trim().length > 0;
 }
 
 function formatReadyTime(value) {
@@ -408,10 +430,10 @@ function RecepcaoV2Page() {
       ...current,
       modelo: moto.modelo || "",
       marca: moto.marca || "",
-      ano: moto.ano || "",
+      ano: moto.ano === null || moto.ano === undefined ? "" : String(moto.ano),
       cor: moto.cor || "",
       placa: moto.placa || "",
-      km: moto.km || "",
+      km: moto.km === null || moto.km === undefined ? "" : String(moto.km),
     }));
     setMotoChoiceOpen(false);
   }
@@ -496,30 +518,34 @@ function RecepcaoV2Page() {
   function validateBeforeReview() {
     const missingFields = [];
 
-    if (!form.nome.trim()) missingFields.push("nome");
-    if (!form.telefone.trim()) missingFields.push("telefone");
-    if (!form.modelo.trim()) missingFields.push("modelo");
-    if (!form.ano.trim()) missingFields.push("ano");
-    if (!form.placa.trim()) missingFields.push("placa");
-    if (!form.dispensa_queixa_principal && !form.queixa_principal.trim()) missingFields.push("queixa principal");
+    if (!hasFilledValue(form.nome)) missingFields.push("nome do cliente");
+    if (!hasFilledValue(form.telefone)) missingFields.push("telefone");
+    if (!hasFilledValue(form.modelo)) missingFields.push("modelo da moto");
+    if (!hasFilledValue(form.ano)) missingFields.push("ano da moto");
+    if (!hasFilledValue(form.placa)) missingFields.push("placa da moto");
+    if (!form.dispensa_queixa_principal && !hasFilledValue(form.queixa_principal)) missingFields.push("queixa principal");
 
     if (missingFields.length) {
-      setError(`Falta preencher: ${missingFields.join(", ")}.`);
+      const message = `Falta preencher: ${missingFields.join(", ")}.`;
+      setError(message);
       return false;
     }
 
     if (
       form.buscar_moto &&
-      (!form.endereco_retirada_rua.trim() || !form.endereco_retirada_numero.trim() || !form.endereco_retirada_bairro.trim() || !form.endereco_retirada_cidade.trim())
+      (!hasFilledValue(form.endereco_retirada_rua) ||
+        !hasFilledValue(form.endereco_retirada_numero) ||
+        !hasFilledValue(form.endereco_retirada_bairro) ||
+        !hasFilledValue(form.endereco_retirada_cidade))
     ) {
-      setError("Preencha rua, numero, bairro e cidade quando o SOS estiver ativo.");
+      const message = "Preencha rua, numero, bairro e cidade quando o SOS estiver ativo.";
+      setError(message);
       return false;
     }
 
-    if (form.dispensa_queixa_principal && (!form.items.length || form.items.some((item) => !item.descricao.trim()))) {
-      setError(
-        "No servico rapido, informe pelo menos um servico ou peca na lista.",
-      );
+    if (form.dispensa_queixa_principal && (!form.items.length || form.items.some((item) => !hasFilledValue(item.descricao)))) {
+      const message = "No servico rapido, informe pelo menos um servico ou peca na lista.";
+      setError(message);
       return false;
     }
 
@@ -726,16 +752,26 @@ function RecepcaoV2Page() {
     navigate(`/v2/prontuario?placa=${plate}`);
   }
 
-  function handleOpenConfirm(event) {
-    event?.preventDefault();
+  function openReview() {
     setSuccessData(null);
     setError("");
 
-    if (!validateBeforeReview()) {
+    try {
+      if (!validateBeforeReview()) {
+        return;
+      }
+    } catch (validationError) {
+      const message = validationError?.message || "Erro inesperado ao validar o formulario.";
+      setError(message);
       return;
     }
 
     setConfirmOpen(true);
+  }
+
+  function handleOpenConfirm(event) {
+    event?.preventDefault();
+    openReview();
   }
 
   return (
@@ -753,6 +789,11 @@ function RecepcaoV2Page() {
       <datalist id="service-options-v2">
         {itemSuggestions.map((suggestion) => (
           <option key={suggestion} value={suggestion} />
+        ))}
+      </datalist>
+      <datalist id="color-options-v2">
+        {colorOptions.map((color) => (
+          <option key={color} value={color} />
         ))}
       </datalist>
 
@@ -855,6 +896,7 @@ function RecepcaoV2Page() {
               </button>
             </div>
           </div>
+          {error ? <p className="form-error recepcao-top-error">{error}</p> : null}
 
           <div className="field-grid two-up">
             <label className="field-label">
@@ -891,6 +933,7 @@ function RecepcaoV2Page() {
             <label className="field-label">
               Cor
               <input
+                list="color-options-v2"
                 value={form.cor}
                 placeholder="Preta"
                 onChange={(event) => updateField("cor", event.target.value)}
@@ -1075,12 +1118,11 @@ function RecepcaoV2Page() {
             </>
           ) : null}
 
-          {error ? <p className="form-error">{error}</p> : null}
-
           <div className="button-row">
             <button
-              type="submit"
+              type="button"
               className="primary-button full-width"
+              onClick={handleOpenConfirm}
               disabled={sending}
             >
               <AppIcon name="send" size={18} />
@@ -1152,6 +1194,7 @@ function RecepcaoV2Page() {
             </p>
           </article>
         </div>
+        {error ? <p className="form-error modal-inline-error">{error}</p> : null}
       </Modal>
 
       <Modal
