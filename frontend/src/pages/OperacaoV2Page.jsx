@@ -73,11 +73,17 @@ function getNomeCurto(nome = "") {
 
 function getResumoItens(ordem) {
   return (ordem.items || [])
+    .filter((item) => !isDiagnosticPlaceholderItem(item))
     .filter((item) => !["CONCLUIDO", "CANCELADO"].includes(item.status_item))
     .map((item) => item.descricao)
     .filter(Boolean)
     .slice(0, 3)
     .join(" | ");
+}
+
+function isDiagnosticPlaceholderItem(item) {
+  const descricao = String(item?.descricao || "").trim().toLowerCase();
+  return descricao === "diagnostico inicial" || (Boolean(item?.exige_diagnostico) && !Boolean(item?.execucao_direta));
 }
 
 function matchesQueue(ordem, scopeId) {
@@ -125,6 +131,12 @@ function getActiveItems(order) {
   return (order?.items || []).filter((item) => !["CONCLUIDO", "CANCELADO"].includes(item.status_item));
 }
 
+function getOperationalItems(order) {
+  const items = (order?.items || []).filter((item) => !["CANCELADO"].includes(item.status_item));
+  const nonDiagnosticItems = items.filter((item) => !isDiagnosticPlaceholderItem(item));
+  return nonDiagnosticItems.length ? nonDiagnosticItems : items;
+}
+
 function getDiagnosticItem(order) {
   return (order?.items || []).find((item) => ["AGUARDANDO_DIAGNOSTICO", "EM_DIAGNOSTICO"].includes(item.status_item)) || null;
 }
@@ -148,9 +160,45 @@ function isDiagnosticOrder(order) {
 }
 
 function canFinalizeOrder(order) {
-  const activeItems = getActiveItems(order);
+  const activeItems = getOperationalItems(order).filter((item) => item.status_item !== "CONCLUIDO");
 
-  return activeItems.length > 0 && activeItems.every((item) => item.status_item === "EM_EXECUCAO");
+  return (
+    activeItems.length > 0 &&
+    activeItems.every((item) => ["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item))
+  );
+}
+
+function getFinalizeBlockReason(order) {
+  const activeItems = getOperationalItems(order).filter((item) => item.status_item !== "CONCLUIDO");
+
+  if (!activeItems.length) {
+    return "Nenhum servico ativo encontrado para finalizar.";
+  }
+
+  const blockedItem = activeItems.find((item) => item.status_item !== "EM_EXECUCAO");
+  const blockedRealItem = activeItems.find((item) => !["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item));
+
+  if (!blockedRealItem) {
+    return "";
+  }
+
+  return `${blockedRealItem.descricao} ainda esta em ${getItemStatusLabel(blockedRealItem.status_item).toLowerCase()}.`;
+}
+
+function getItemStatusLabel(status = "") {
+  const map = {
+    AGUARDANDO_DIAGNOSTICO: "Aguardando diagnostico",
+    EM_DIAGNOSTICO: "Em diagnostico",
+    DIAGNOSTICADO: "Diagnosticado",
+    AGUARDANDO_ORCAMENTO: "Aguardando orcamento",
+    AGUARDANDO_AUTORIZACAO: "Aguardando autorizacao",
+    PRONTO_PARA_EXECUTAR: "Pronto para executar",
+    EM_EXECUCAO: "Em execucao",
+    AGUARDANDO_PECA: "Aguardando peca",
+    CONCLUIDO: "Concluido",
+  };
+
+  return map[status] || status;
 }
 
 function buildDiagnosticoWhatsappMessage(order, diagnosticoTexto, pecasRecomendadas, mecanicoNome) {
@@ -410,10 +458,16 @@ function OperacaoV2Page() {
       return;
     }
 
-    const itensEmExecucao = getActiveItems(selectedOrder).filter((item) => item.status_item === "EM_EXECUCAO");
+    const itensAtivos = getOperationalItems(selectedOrder).filter((item) => item.status_item !== "CONCLUIDO");
+    const itensBloqueados = itensAtivos.filter((item) => !["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item));
 
-    if (!itensEmExecucao.length) {
-      setError("Assuma a moto antes de finalizar.");
+    if (!itensAtivos.length) {
+      setError("Nenhum servico ativo encontrado para finalizar.");
+      return;
+    }
+
+    if (itensBloqueados.length) {
+      setError(`Ainda nao da para finalizar: ${itensBloqueados[0].descricao} esta em ${getItemStatusLabel(itensBloqueados[0].status_item).toLowerCase()}.`);
       return;
     }
 
@@ -421,8 +475,11 @@ function OperacaoV2Page() {
     setError("");
 
     try {
-      for (const item of itensEmExecucao) {
-        await handleMarcarPronto(item);
+      for (const item of itensAtivos) {
+        if (item.status_item === "PRONTO_PARA_EXECUTAR") {
+          await updateItemStatusV2(selectedOrder.id, item.id, "EM_EXECUCAO");
+        }
+        await updateItemStatusV2(selectedOrder.id, item.id, "CONCLUIDO");
       }
 
       const ordemAtualizada = await getOrdemServicoV2(selectedOrder.id);
@@ -813,6 +870,12 @@ function OperacaoV2Page() {
               <button type="button" className="ghost-button" onClick={() => setDetailOpen(false)} disabled={busy}>
                 Fechar
               </button>
+              {!canFinalizeOrder(selectedOrder) ? (
+                <span className="operacao-finalize-hint">
+                  <AppIcon name="clock" size={14} />
+                  {getFinalizeBlockReason(selectedOrder)}
+                </span>
+              ) : null}
               <button type="button" className="primary-button" onClick={() => void handleFinalizarMoto()} disabled={busy || !canFinalizeOrder(selectedOrder)}>
                 Finalizar moto
               </button>
@@ -875,53 +938,107 @@ function OperacaoV2Page() {
               </>
             ) : (
               <>
-                <article className="detail-row operacao-equipe-row">
-                  <div>
-                    <strong>Servicos da moto</strong>
-                    <p>Vincule mecanicos e observacoes em cada servico.</p>
+                <article className="detail-row operacao-modal-summary is-compact">
+                  <div className="operacao-modal-summary-metrics">
+                    <span className="summary-pill strong" title="Total de servicos no fluxo">
+                      <AppIcon name="reports" size={14} />
+                      {getOperationalItems(selectedOrder).length}
+                    </span>
+                    <span className="summary-pill" title="Servicos em execucao">
+                      <AppIcon name="workshop" size={14} />
+                      {getOperationalItems(selectedOrder).filter((item) => item.status_item === "EM_EXECUCAO").length}
+                    </span>
                   </div>
                 </article>
 
-                <div className="table-list operacao-service-list">
-                  {selectedOrder.items.map((item) => (
+                <div className="table-list operacao-service-list operacao-service-board">
+                  {getOperationalItems(selectedOrder).map((item) => (
                     <article className="row-card operacao-service-card" key={item.id}>
                       <div className="operacao-service-copy">
-                        <strong>{item.descricao}</strong>
-                        <small>{item.status_item}</small>
+                        <div className="operacao-service-topline">
+                          <strong>{item.descricao}</strong>
+                          <span className={`operacao-status-chip status-${String(item.status_item || "").toLowerCase()}`}>
+                            {getItemStatusLabel(item.status_item)}
+                          </span>
+                        </div>
+                        <div className="operacao-service-meta">
+                          <span className="operacao-meta-pill" title="Responsavel">
+                            <AppIcon name="mechanic" size={14} />
+                            {getResponsaveisLabel(selectedOrder, item.id)}
+                          </span>
+                          <span
+                            className={`operacao-meta-pill ${item.pagamento_status === "PAGO" ? "is-paid" : "is-pending"}`}
+                            title={item.pagamento_status === "PAGO" ? "Pagamento confirmado" : "Pagamento pendente"}
+                          >
+                            <AppIcon name="money" size={14} />
+                            {item.pagamento_status === "PAGO" ? "Ok" : "Pendente"}
+                          </span>
+                        </div>
                         {item.status_item === "AGUARDANDO_PECA" ? (
                           <p className="operacao-part-note">
+                            <AppIcon name="clock" size={14} />
                             {getActivePartPreview(selectedOrder, item.id)?.descricao_peca || item.descricao} ate{" "}
                             {formatDateTimeLabel(getActivePartPreview(selectedOrder, item.id)?.previsao_chegada || item.previsao_peca_atual)}
                           </p>
                         ) : null}
-                        {getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao ? <p>{getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao}</p> : null}
+                        {getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao ? (
+                          <p className="operacao-service-observation">{getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao}</p>
+                        ) : null}
                       </div>
-                      <div className="row-actions stacked operacao-service-actions">
+                      <div className="row-actions operacao-service-actions">
                         <button
                           type="button"
                           className={`icon-button operacao-payment-icon ${item.pagamento_status === "PAGO" ? "is-paid" : "is-pending"}`}
                           onClick={() => void handleTogglePagamento(item)}
                           disabled={busy}
                           aria-label={item.pagamento_status === "PAGO" ? "Marcar como pendente" : "Marcar como pago"}
+                          title={item.pagamento_status === "PAGO" ? "Pagamento confirmado" : "Pagamento pendente"}
                         >
                           <AppIcon name="money" size={18} />
                         </button>
-                        <button type="button" className="ghost-button operacao-responsavel-button" onClick={() => openMechanicAssignment(item)} disabled={busy}>
-                          <span>{getResponsaveisLabel(selectedOrder, item.id)}</span>
-                          <AppIcon name="plus" size={16} />
+                        <button
+                          type="button"
+                          className="icon-button operacao-action-icon"
+                          onClick={() => openMechanicAssignment(item)}
+                          disabled={busy}
+                          aria-label="Definir equipe"
+                          title="Definir equipe"
+                        >
+                          <AppIcon name="mechanic" size={18} />
                         </button>
                         {item.status_item === "AGUARDANDO_PECA" ? (
                           <>
-                            <button type="button" className="ghost-button operacao-part-button" onClick={() => openPartModal(item)} disabled={busy}>
-                              Atualizar prazo
+                            <button
+                              type="button"
+                              className="icon-button operacao-action-icon"
+                              onClick={() => openPartModal(item)}
+                              disabled={busy}
+                              aria-label="Editar prazo da peca"
+                              title="Editar prazo da peca"
+                            >
+                              <AppIcon name="clock" size={18} />
                             </button>
-                            <button type="button" className="secondary-button operacao-part-button" onClick={() => void handleRetomarPeca(item)} disabled={busy}>
-                              Peca chegou
+                            <button
+                              type="button"
+                              className="icon-button operacao-action-icon is-success"
+                              onClick={() => void handleRetomarPeca(item)}
+                              disabled={busy}
+                              aria-label="Peca chegou"
+                              title="Peca chegou"
+                            >
+                              <AppIcon name="check" size={18} />
                             </button>
                           </>
                         ) : (
-                          <button type="button" className="ghost-button operacao-part-button" onClick={() => openPartModal(item)} disabled={busy}>
-                            Aguardar peca
+                          <button
+                            type="button"
+                            className="icon-button operacao-action-icon"
+                            onClick={() => openPartModal(item)}
+                            disabled={busy}
+                            aria-label="Colocar em aguardando peca"
+                            title="Colocar em aguardando peca"
+                          >
+                            <AppIcon name="clock" size={18} />
                           </button>
                         )}
                       </div>

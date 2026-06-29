@@ -252,6 +252,56 @@ function isAtendimentoRapidoOrdem(ordemServico, items = []) {
   );
 }
 
+function isDiagnosticPlaceholderItem(item) {
+  const descricao = String(item?.descricao || "").trim().toLowerCase();
+  return descricao === "diagnostico inicial" || (Boolean(item?.exige_diagnostico) && !Boolean(item?.execucao_direta));
+}
+
+async function closeResolvedDiagnosticPlaceholders(trx, ordemServicoId, currentUser, observacao = null) {
+  const items = await itemOrdemServicoV2Repository.listByOrdemServicoId(ordemServicoId, trx);
+  const executableStatuses = new Set([
+    "AGUARDANDO_AUTORIZACAO",
+    "PRONTO_PARA_EXECUTAR",
+    "EM_EXECUCAO",
+    "AGUARDANDO_PECA",
+    "CONCLUIDO",
+  ]);
+
+  const hasExecutableFlow = items.some(
+    (item) => !isDiagnosticPlaceholderItem(item) && executableStatuses.has(item.status_item),
+  );
+
+  if (!hasExecutableFlow) {
+    return;
+  }
+
+  const placeholders = items.filter(
+    (item) =>
+      isDiagnosticPlaceholderItem(item) &&
+      ["DIAGNOSTICADO", "AGUARDANDO_ORCAMENTO", "AGUARDANDO_AUTORIZACAO"].includes(item.status_item),
+  );
+
+  for (const item of placeholders) {
+    await itemOrdemServicoV2Repository.updateFields(trx, item.id, {
+      status_item: "CONCLUIDO",
+      concluido_em: item.concluido_em || db.fn.now(),
+    });
+
+    await appendHistoricoItem(trx, {
+      itemOrdemServicoId: item.id,
+      usuarioId: currentUser?.id || null,
+      acao: "ITEM_DIAGNOSTICO_ENCERRADO",
+      statusItemAnterior: item.status_item,
+      statusItemNovo: "CONCLUIDO",
+      autorizacaoAnterior: item.autorizacao_status,
+      autorizacaoNova: item.autorizacao_status,
+      pagamentoAnterior: item.pagamento_status,
+      pagamentoNovo: item.pagamento_status,
+      observacao: observacao || "Item de diagnostico encerrado apos avancar para a etapa comercial/execucao.",
+    });
+  }
+}
+
 async function createLegacyQueueEntryForQuickService(trx, payload, currentUser, numeroOs) {
   const problemaServico = buildLegacyProblemaServico(payload.items);
 
@@ -749,6 +799,12 @@ async function updateItemAutorizacao(ordemServicoId, itemId, autorizacaoStatus, 
       observacao,
     });
 
+    await closeResolvedDiagnosticPlaceholders(
+      trx,
+      ordemServicoId,
+      currentUser,
+      "Item de diagnostico encerrado apos autorizacao comercial.",
+    );
     await recalculateOrdemServicoAggregate(trx, ordemServicoId, currentUser, "Recalculo apos alteracao de autorizacao do item.");
     return loadOrdemServicoBundle(ordemServicoId, trx);
   });
@@ -796,6 +852,12 @@ async function registrarPrevisaoPeca(ordemServicoId, itemId, payload, currentUse
       observacao: payload.observacao || payload.descricaoPeca,
     });
 
+    await closeResolvedDiagnosticPlaceholders(
+      trx,
+      ordemServicoId,
+      currentUser,
+      "Item de diagnostico encerrado enquanto a ordem aguardava peca comercial.",
+    );
     await recalculateOrdemServicoAggregate(trx, ordemServicoId, currentUser, "Recalculo apos item entrar em aguardando peca.");
     return loadOrdemServicoBundle(ordemServicoId, trx);
   });
@@ -834,6 +896,12 @@ async function retomarItemDaPeca(ordemServicoId, itemId, payload, currentUser) {
       observacao: payload.observacao || "Peca recebida e item retomado.",
     });
 
+    await closeResolvedDiagnosticPlaceholders(
+      trx,
+      ordemServicoId,
+      currentUser,
+      "Item de diagnostico encerrado apos retorno da peca ao fluxo da oficina.",
+    );
     await recalculateOrdemServicoAggregate(trx, ordemServicoId, currentUser, "Recalculo apos retorno de aguardando peca.");
     return loadOrdemServicoBundle(ordemServicoId, trx);
   });
@@ -1619,6 +1687,12 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
       observacao: orcamentoExistente ? "Orcamento V2 atualizado." : "Orcamento V2 criado.",
     });
 
+    await closeResolvedDiagnosticPlaceholders(
+      trx,
+      ordemServicoId,
+      currentUser,
+      "Item de diagnostico encerrado apos montagem do orcamento.",
+    );
     await recalculateOrdemServicoAggregate(trx, ordemServicoId, currentUser, "Recalculo apos criacao de orcamento.");
     return {
       orcamento: {
@@ -1667,6 +1741,21 @@ async function updateOrcamentoStatus(orcamentoId, payload, currentUser) {
       acao: "ORCAMENTO_STATUS_ALTERADO",
       observacao: `Orcamento #${orcamento.numero_externo} movido para ${payload.statusOrcamento}.`,
     });
+
+    if (payload.statusOrcamento === "APROVADO") {
+      await closeResolvedDiagnosticPlaceholders(
+        trx,
+        orcamento.ordem_servico_id,
+        currentUser,
+        "Item de diagnostico encerrado apos aprovacao do orcamento.",
+      );
+      await recalculateOrdemServicoAggregate(
+        trx,
+        orcamento.ordem_servico_id,
+        currentUser,
+        "Recalculo apos aprovacao do orcamento.",
+      );
+    }
 
     return {
       orcamento: {

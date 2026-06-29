@@ -3600,14 +3600,32 @@
   gap: 12px;
 }
 
+.operacao-service-board {
+  gap: 8px;
+}
+
 .operacao-service-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
   align-items: center;
-  padding: 18px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(126, 183, 255, 0.08);
+  box-shadow: none;
 }
 
 .operacao-service-copy {
   display: grid;
-  gap: 6px;
+  gap: 8px;
+}
+
+.operacao-service-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .operacao-service-copy small {
@@ -3617,39 +3635,151 @@
 }
 
 .operacao-service-copy strong {
-  font-size: 1.08rem;
+  font-size: 1rem;
+}
+
+.operacao-service-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.operacao-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-soft);
+  font-size: 0.84rem;
+}
+
+.operacao-meta-pill.is-paid {
+  color: #98efb5;
+  border-color: rgba(46, 204, 113, 0.26);
+  background: rgba(46, 204, 113, 0.12);
+}
+
+.operacao-meta-pill.is-pending {
+  color: #ffcab8;
+  border-color: rgba(255, 123, 92, 0.24);
+  background: rgba(255, 123, 92, 0.1);
+}
+
+.operacao-status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #dbe7fb;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.operacao-status-chip.status-em_execucao {
+  color: #9de8b7;
+  border-color: rgba(46, 204, 113, 0.26);
+  background: rgba(46, 204, 113, 0.14);
+}
+
+.operacao-status-chip.status-aguardando_peca {
+  color: #ffd99b;
+  border-color: rgba(255, 173, 50, 0.24);
+  background: rgba(255, 173, 50, 0.12);
+}
+
+.operacao-status-chip.status-pronto_para_executar {
+  color: #9cd0ff;
+  border-color: rgba(88, 166, 255, 0.22);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.operacao-service-observation {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.4;
+  font-size: 0.9rem;
 }
 
 .operacao-service-actions {
-  display: grid;
-  justify-items: end;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 .operacao-payment-icon,
-.operacao-responsavel-button {
-  min-height: 48px;
+.operacao-action-icon {
+  width: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  height: 42px;
+  padding: 0;
 }
 
-.operacao-part-button {
-  min-height: 48px;
-  width: 100%;
+.operacao-action-icon {
+  color: var(--text-soft);
+}
+
+.operacao-action-icon.is-success {
+  color: #98efb5;
+  border-color: rgba(46, 204, 113, 0.18);
+  background: rgba(46, 204, 113, 0.1);
 }
 
 .operacao-part-note {
-  color: #ffd99b;
-}
-
-.operacao-equipe-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: #ffd99b;
+  font-size: 0.88rem;
 }
 
-.operacao-equipe-row strong {
+.operacao-modal-summary {
+  display: grid;
+  grid-template-columns: auto;
+  gap: 8px;
+  align-items: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.operacao-modal-summary strong {
   display: block;
   margin-bottom: 6px;
+}
+
+.operacao-modal-summary-metrics {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.operacao-modal-summary.is-compact .summary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.operacao-finalize-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  color: #ffd99b;
+  font-size: 0.92rem;
 }
 
 .operacao-mecanicos-grid {
@@ -4001,7 +4131,7 @@
   }
 
   .operacao-service-card {
-    grid-template-columns: minmax(0, 1fr) minmax(260px, 0.9fr);
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .operacao-immersive-page {
@@ -4196,12 +4326,12 @@
     grid-template-columns: 1fr;
   }
 
-  .operacao-equipe-row {
+  .operacao-modal-summary {
     grid-template-columns: 1fr;
   }
 
   .operacao-service-actions {
-    justify-items: stretch;
+    justify-content: flex-start;
   }
 
   .orcamento-overview-grid {
