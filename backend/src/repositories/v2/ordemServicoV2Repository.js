@@ -69,7 +69,9 @@ async function list(filters = {}, trx = db) {
 }
 
 async function listRecent(limit = 30, trx = db) {
-  const query = baseSelect(trx).limit(limit);
+  const query = baseSelect(trx)
+    .whereNotIn("ordens_servico.status_geral", ["PRONTA_PARA_RETIRADA", "FINALIZADA", "ARQUIVADA", "CANCELADA"])
+    .limit(limit);
   applyOperationalOrdering(query);
   return query;
 }

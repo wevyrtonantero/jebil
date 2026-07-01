@@ -112,6 +112,10 @@ function matchesQueue(ordem, scopeId) {
   return false;
 }
 
+function isOperationalOrder(ordem) {
+  return !["PRONTA_PARA_RETIRADA", "FINALIZADA", "ARQUIVADA", "CANCELADA"].includes(ordem?.status_geral);
+}
+
 function getExecucaoForItem(order, itemId) {
   return (order?.execucoes || []).find((execucao) => Number(execucao.item_ordem_servico_id) === Number(itemId)) || null;
 }
@@ -317,7 +321,7 @@ function OperacaoV2Page() {
     }
 
     return ordens.filter((ordem) => {
-      if (ordem.status_geral === "PRONTA_PARA_RETIRADA") {
+      if (!isOperationalOrder(ordem)) {
         return false;
       }
 
