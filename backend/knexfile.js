@@ -31,4 +31,5 @@ const sharedConfig = {
 
 module.exports = {
   development: sharedConfig,
+  production: sharedConfig,
 };
