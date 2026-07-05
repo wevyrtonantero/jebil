@@ -17,6 +17,11 @@ const sharedConfig = {
   pool: {
     min: Number(process.env.DB_POOL_MIN || 0),
     max: Number(process.env.DB_POOL_MAX || 10),
+    afterCreate(connection, done) {
+      connection.query("SET time_zone = '+00:00'", (error) => {
+        done(error, connection);
+      });
+    },
   },
   migrations: {
     directory: path.resolve(__dirname, "src/database/migrations"),
