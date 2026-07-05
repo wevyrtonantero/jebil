@@ -45,16 +45,6 @@ function getPublicAssetUrl(path = "") {
   return `${getApiOrigin()}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-function getLatestOrcamento(ordem) {
-  return [...(ordem?.orcamentos || [])].sort((left, right) => {
-    if (Number(left.versao_numero || 0) !== Number(right.versao_numero || 0)) {
-      return Number(right.versao_numero || 0) - Number(left.versao_numero || 0);
-    }
-
-    return Number(right.id || 0) - Number(left.id || 0);
-  })[0] || null;
-}
-
 function buildReceiptContractData(ordem, signedAt = new Date()) {
   if (!ordem) {
     return {
@@ -66,7 +56,6 @@ function buildReceiptContractData(ordem, signedAt = new Date()) {
     };
   }
 
-  const latestOrcamento = getLatestOrcamento(ordem);
   const motoIdentificacao = [
     ordem.motocicleta_marca,
     ordem.motocicleta_modelo,
@@ -84,7 +73,6 @@ function buildReceiptContractData(ordem, signedAt = new Date()) {
       { label: "Telefone", value: ordem.cliente_telefone || "Nao informado" },
       { label: "Motocicleta", value: `${motoIdentificacao || "Nao informada"} - ${ordem.motocicleta_placa || "Sem placa"}` },
       { label: "Numero da OS", value: ordem.numero_os || "Nao informada" },
-      { label: "Orcamento de referencia", value: latestOrcamento?.numero_externo || "Ainda nao gerado" },
       { label: "Data do aceite", value: formatDateTime(signedAt) },
     ],
     clausulas: [

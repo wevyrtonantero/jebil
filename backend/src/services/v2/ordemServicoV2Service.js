@@ -177,18 +177,16 @@ function buildAssinaturaRecebimentoTerm(ordemServico, latestOrcamento, assinadoE
     .trim();
 
   const placa = ordemServico.motocicleta_placa || "Nao informada";
-  const orcamentoReferencia = latestOrcamento?.numero_externo || "Ainda nao gerado";
   const dataAssinatura = formatTermDateTime(assinadoEm);
 
   return {
     termoTitulo: "Termo de recebimento das fotos da motocicleta",
-    orcamentoReferencia,
+    orcamentoReferencia: latestOrcamento?.numero_externo || null,
     termoTexto: [
       `Cliente: ${ordemServico.cliente_nome || "Nao informado"}`,
       `Telefone: ${ordemServico.cliente_telefone || "Nao informado"}`,
       `Motocicleta: ${moto || "Nao informada"} - ${placa}`,
       `OS: ${ordemServico.numero_os || "Nao informada"}`,
-      `Orcamento de referencia: ${orcamentoReferencia}`,
       `Data do aceite: ${dataAssinatura}`,
       "",
       "Declaro que recebi no WhatsApp as fotos de entrada da motocicleta acima.",

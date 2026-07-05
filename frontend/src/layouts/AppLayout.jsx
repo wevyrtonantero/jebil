@@ -23,10 +23,8 @@ function AppLayout() {
     { to: "/v2/orcamentos", label: "Orcamentos", icon: "money", show: canAccessApplication },
     { to: "/v2/prontuario", label: "Prontuario", icon: "motorcycle", show: canAccessApplication },
     { to: "/mecanicos", label: "Mecanicos", icon: "mechanic", show: canAccessApplication },
-    { to: "/atendimentos", label: "Atendimentos", icon: "reports", show: canAccessApplication },
     { to: "/clientes", label: "Clientes", icon: "clients", show: canAccessApplication },
     { to: "/senhas", label: "Senhas", icon: "settings", show: canAccessDashboard },
-    { to: "/painel/clientes", label: "Painel clientes", icon: "clock", show: canAccessApplication },
   ];
   const pageTitle =
     [...navigationItems]

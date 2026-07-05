@@ -10,11 +10,9 @@ import ClientesPage from "../pages/ClientesPage";
 import MecanicosPage from "../pages/MecanicosPage";
 import RecepcaoV2Page from "../pages/RecepcaoV2Page";
 import RecepcaoFotosPage from "../pages/RecepcaoFotosPage";
-import AtendimentosPage from "../pages/AtendimentosPage";
 import OficinaAdminPage from "../pages/OficinaAdminPage";
 import OperacaoV2Page from "../pages/OperacaoV2Page";
 import OrcamentistaV2Page from "../pages/OrcamentistaV2Page";
-import PainelClientesPage from "../pages/PainelClientesPage";
 import PasswordManagementPage from "../pages/PasswordManagementPage";
 import ProntuarioV2Page from "../pages/ProntuarioV2Page";
 import AccessDeniedPage from "../pages/AccessDeniedPage";
@@ -46,8 +44,6 @@ function AppRouter() {
             <Route path="/" element={<HomeRedirect />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/acesso-negado" element={<AccessDeniedPage />} />
-            <Route path="/painel/clientes" element={<PainelClientesPage />} />
-
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
                 <Route element={<RoleRoute allowedRoles={DIRECTOR_ROLES} />}>
@@ -58,7 +54,6 @@ function AppRouter() {
                 <Route element={<RoleRoute allowedRoles={APP_ACCESS_ROLES} />}>
                   <Route path="/clientes" element={<ClientesPage />} />
                   <Route path="/mecanicos" element={<MecanicosPage />} />
-                  <Route path="/atendimentos" element={<AtendimentosPage />} />
                   <Route path="/recepcao" element={<RecepcaoV2Page />} />
                   <Route path="/recepcao/fotos" element={<RecepcaoFotosPage />} />
                   <Route path="/introducao" element={<Navigate to="/recepcao" replace />} />

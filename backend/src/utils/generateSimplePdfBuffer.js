@@ -272,7 +272,6 @@ function generateAssinaturaRecebimentoPdfBuffer({ ordem, assinatura }) {
   y = buildTextBlock(operations, margin, y - 2, [
     `Telefone: ${assinatura?.telefone_cliente || ordem?.cliente_telefone || "-"}`,
     `Motocicleta: ${motoNome} - ${ordem?.motocicleta_placa || "-"}`,
-    `Orcamento de referencia: ${assinatura?.orcamento_referencia || "Ainda nao gerado"}`,
   ], { font: "F1", size: 11, lineHeight: 15, color: ink });
 
   y -= 4;

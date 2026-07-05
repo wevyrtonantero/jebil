@@ -106,9 +106,10 @@ function extractDateParts(value) {
   }
 
   const rawValue = String(value).trim();
+  const hasExplicitTimezone = /(?:[zZ]|[+-]\d{2}:\d{2})$/.test(rawValue);
   const match = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
 
-  if (match) {
+  if (match && !hasExplicitTimezone) {
     return {
       year: match[1],
       month: match[2],
@@ -124,12 +125,28 @@ function extractDateParts(value) {
     return null;
   }
 
+  const formatter = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const formattedParts = Object.fromEntries(
+    formatter
+      .formatToParts(parsedDate)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+
   return {
-    year: String(parsedDate.getFullYear()),
-    month: String(parsedDate.getMonth() + 1).padStart(2, "0"),
-    day: String(parsedDate.getDate()).padStart(2, "0"),
-    hour: String(parsedDate.getHours()).padStart(2, "0"),
-    minute: String(parsedDate.getMinutes()).padStart(2, "0"),
+    year: formattedParts.year,
+    month: formattedParts.month,
+    day: formattedParts.day,
+    hour: formattedParts.hour,
+    minute: formattedParts.minute,
   };
 }
 
@@ -154,6 +171,24 @@ function formatReportDateTime(value) {
 }
 
 function addDaysToDate(value, days) {
+  if (!value) {
+    return null;
+  }
+
+  const rawValue = String(value).trim();
+  const match = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
+
+  if (match && !/(?:[zZ]|[+-]\d{2}:\d{2})$/.test(rawValue)) {
+    const [, year, month, day, hour, minute, second = "00"] = match;
+    const parsedDate = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return null;
+    }
+
+    return new Date(parsedDate.getTime() + days * 24 * 60 * 60 * 1000);
+  }
+
   const parsedDate = value instanceof Date ? value : new Date(value);
 
   if (Number.isNaN(parsedDate.getTime())) {
@@ -241,12 +276,24 @@ function getLatestServiceDate(services = [], ordem = {}) {
   const dates = services
     .map((service) => service.dataServico)
     .filter(Boolean)
-    .map((value) => new Date(value))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((left, right) => right.getTime() - left.getTime());
+    .map((value) => {
+      const parts = extractDateParts(value);
+
+      if (!parts) {
+        return null;
+      }
+
+      const sortable = `${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}`;
+      return {
+        sortable,
+        original: value,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.sortable.localeCompare(left.sortable));
 
   if (dates.length) {
-    return dates[0].toISOString();
+    return dates[0].original;
   }
 
   return ordem.pronta_retirada_em || ordem.finalizada_em || ordem.atualizado_em || ordem.aberta_em || null;
