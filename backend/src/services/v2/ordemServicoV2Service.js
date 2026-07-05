@@ -3,7 +3,7 @@ const path = require("path");
 const db = require("../../database/connection");
 const { ApiError } = require("../../utils/ApiError");
 const { formatOsNumber } = require("../../utils/formatOsNumber");
-const { orcamentosPdfDir } = require("../../config/upload");
+const { orcamentosPdfDir, assinaturasPdfDir } = require("../../config/upload");
 const clienteRepository = require("../../repositories/clienteRepository");
 const motocicletaRepository = require("../../repositories/motocicletaRepository");
 const ordemServicoV2Repository = require("../../repositories/v2/ordemServicoV2Repository");
@@ -14,7 +14,7 @@ const mecanicoRepository = require("../../repositories/mecanicoRepository");
 const atendimentoRepository = require("../../repositories/atendimentoRepository");
 const { registrarHistorico } = require("../historicoService");
 const { toOrdemServicoV2Dto } = require("../../utils/ordemServicoV2Dtos");
-const { generateOrcamentoPdfBuffer } = require("../../utils/generateSimplePdfBuffer");
+const { generateOrcamentoPdfBuffer, generateAssinaturaRecebimentoPdfBuffer } = require("../../utils/generateSimplePdfBuffer");
 const { emitSocketEvent } = require("../../sockets");
 const {
   deriveOrdemServicoStatus,
@@ -144,6 +144,59 @@ function normalizeMySqlDateTime(value) {
   return rawValue;
 }
 
+function formatTermDateTime(value) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(value instanceof Date ? value : new Date(value));
+}
+
+function getLatestOrcamentoRecord(orcamentos = []) {
+  return [...orcamentos].sort((left, right) => {
+    if (Number(left.versao_numero || 0) !== Number(right.versao_numero || 0)) {
+      return Number(right.versao_numero || 0) - Number(left.versao_numero || 0);
+    }
+
+    return Number(right.id || 0) - Number(left.id || 0);
+  })[0] || null;
+}
+
+function buildAssinaturaRecebimentoTerm(ordemServico, latestOrcamento, assinadoEm) {
+  const moto = [
+    ordemServico.motocicleta_marca,
+    ordemServico.motocicleta_modelo,
+    ordemServico.motocicleta_ano,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  const placa = ordemServico.motocicleta_placa || "Nao informada";
+  const orcamentoReferencia = latestOrcamento?.numero_externo || "Ainda nao gerado";
+  const dataAssinatura = formatTermDateTime(assinadoEm);
+
+  return {
+    termoTitulo: "Termo de recebimento das fotos da motocicleta",
+    orcamentoReferencia,
+    termoTexto: [
+      `Cliente: ${ordemServico.cliente_nome || "Nao informado"}`,
+      `Telefone: ${ordemServico.cliente_telefone || "Nao informado"}`,
+      `Motocicleta: ${moto || "Nao informada"} - ${placa}`,
+      `OS: ${ordemServico.numero_os || "Nao informada"}`,
+      `Orcamento de referencia: ${orcamentoReferencia}`,
+      `Data do aceite: ${dataAssinatura}`,
+      "",
+      "Declaro que recebi no WhatsApp as fotos de entrada da motocicleta acima.",
+      "Declaro tambem estar ciente de que podera haver cobranca de diagnostico e/ou elaboracao de orcamento, conforme avaliacao do atendimento.",
+    ].join("\n"),
+  };
+}
+
 function normalizeOrderItemOrigin(value) {
   const normalizedValue = String(value || "").trim().toUpperCase();
 
@@ -254,7 +307,7 @@ function isAtendimentoRapidoOrdem(ordemServico, items = []) {
 
 function isDiagnosticPlaceholderItem(item) {
   const descricao = String(item?.descricao || "").trim().toLowerCase();
-  return descricao === "diagnostico inicial" || (Boolean(item?.exige_diagnostico) && !Boolean(item?.execucao_direta));
+  return descricao === "diagnostico inicial";
 }
 
 async function closeResolvedDiagnosticPlaceholders(trx, ordemServicoId, currentUser, observacao = null) {
@@ -470,7 +523,7 @@ async function loadOrdemServicoBundle(ordemServicoId, trx = db) {
     throw new ApiError(404, "Ordem de servico V2 nao encontrada.");
   }
 
-  const [items, diagnosticos, historicoOrdem, historicoItens, fotosEntrada, comunicacoes, garantias, previsoesPecas, execucoes] = await Promise.all([
+  const [items, diagnosticos, historicoOrdem, historicoItens, fotosEntrada, comunicacoes, assinaturaRecebimento, garantias, previsoesPecas, execucoes] = await Promise.all([
     itemOrdemServicoV2Repository.listByOrdemServicoId(ordemServicoId, trx),
     diagnosticoV2Repository.listByOrdemServicoId(ordemServicoId, trx),
     trx("historico_ordem_servico")
@@ -502,6 +555,14 @@ async function loadOrdemServicoBundle(ordemServicoId, trx = db) {
       .where({ ordem_servico_id: ordemServicoId })
       .orderBy("criado_em", "asc")
       .orderBy("id", "asc"),
+    trx("assinaturas_recebimento")
+      .leftJoin("usuarios", "usuarios.id", "assinaturas_recebimento.usuario_responsavel_id")
+      .select(
+        "assinaturas_recebimento.*",
+        "usuarios.nome as usuario_responsavel_nome",
+      )
+      .where("assinaturas_recebimento.ordem_servico_id", ordemServicoId)
+      .first(),
     trx("garantias")
       .whereIn(
         "item_ordem_servico_id",
@@ -560,6 +621,13 @@ async function loadOrdemServicoBundle(ordemServicoId, trx = db) {
     historico_itens: historicoItens,
     fotos_entrada: fotosEntrada,
     comunicacoes_whatsapp: comunicacoes,
+    assinatura_recebimento: assinaturaRecebimento
+      ? {
+        ...assinaturaRecebimento,
+        recebeu_fotos_whatsapp: Boolean(assinaturaRecebimento.recebeu_fotos_whatsapp),
+        ciente_possivel_cobranca: Boolean(assinaturaRecebimento.ciente_possivel_cobranca),
+      }
+      : null,
     garantias,
     previsoes_pecas: previsoesPecas,
     execucoes: execucoes.map((execucao) => ({
@@ -1112,7 +1180,7 @@ async function concluirDiagnostico(diagnosticoId, payload, currentUser) {
       const item = await itemOrdemServicoV2Repository.findById(diagnostico.item_diagnostico_id, trx);
       if (item && item.status_item === "EM_DIAGNOSTICO") {
         await itemOrdemServicoV2Repository.updateFields(trx, item.id, {
-          status_item: "AGUARDANDO_ORCAMENTO",
+          status_item: "AGUARDANDO_AUTORIZACAO",
           concluido_em: item.concluido_em,
         });
         await appendHistoricoItem(trx, {
@@ -1120,7 +1188,7 @@ async function concluirDiagnostico(diagnosticoId, payload, currentUser) {
           usuarioId: currentUser.id,
           acao: payload.enviarOrcamentista ? "DIAGNOSTICO_CONCLUIDO_ENVIADO_ORCAMENTO" : "DIAGNOSTICO_CONCLUIDO",
           statusItemAnterior: item.status_item,
-          statusItemNovo: "AGUARDANDO_ORCAMENTO",
+          statusItemNovo: "AGUARDANDO_AUTORIZACAO",
           autorizacaoAnterior: item.autorizacao_status,
           autorizacaoNova: item.autorizacao_status,
           pagamentoAnterior: item.pagamento_status,
@@ -1325,6 +1393,66 @@ async function finalizarCadastroFotos(ordemServicoId, currentUser) {
 
   emitV2Updated(ordemServicoId, { tipo: "cadastro_fotos_finalizado" });
   return data;
+}
+
+async function registrarAssinaturaRecebimento(ordemServicoId, payload, currentUser) {
+  const data = await db.transaction(async (trx) => {
+    const ordem = await loadOrdemServicoBundle(ordemServicoId, trx);
+    const latestOrcamento = getLatestOrcamentoRecord(ordem.orcamentos || []);
+    const assinadoEm = new Date();
+    const termo = buildAssinaturaRecebimentoTerm(ordem, latestOrcamento, assinadoEm);
+    const registroAtual = await trx("assinaturas_recebimento")
+      .where({ ordem_servico_id: ordemServicoId })
+      .first();
+
+    const registroPayload = {
+      ordem_servico_id: ordemServicoId,
+      cliente_id: ordem.cliente_id,
+      motocicleta_id: ordem.motocicleta_id,
+      usuario_responsavel_id: currentUser.id,
+      nome_cliente: ordem.cliente_nome || null,
+      telefone_cliente: ordem.cliente_telefone || null,
+      numero_os: ordem.numero_os,
+      orcamento_referencia: termo.orcamentoReferencia,
+      termo_titulo: termo.termoTitulo,
+      termo_texto: termo.termoTexto,
+      recebeu_fotos_whatsapp: payload.recebeuFotosWhatsapp,
+      ciente_possivel_cobranca: payload.cientePossivelCobranca,
+      assinatura_data_url: payload.assinaturaDataUrl,
+      assinado_em: assinadoEm,
+      atualizado_em: db.fn.now(),
+    };
+
+    if (registroAtual) {
+      throw new ApiError(409, "Esta OS ja possui uma assinatura registrada e nao pode ser alterada.");
+    }
+
+    await trx("assinaturas_recebimento").insert({
+      ...registroPayload,
+      criado_em: db.fn.now(),
+    });
+
+    await appendHistoricoOrdemServico(trx, {
+      ordemServicoId,
+      usuarioId: currentUser.id,
+      acao: "ASSINATURA_RECEBIMENTO_REGISTRADA",
+      observacao: `Aceite do cliente registrado em ${formatTermDateTime(assinadoEm)}.`,
+    });
+
+    return loadOrdemServicoBundle(ordemServicoId, trx);
+  });
+
+  try {
+    const pdfData = await saveGeneratedAssinaturaRecebimentoPdf(ordemServicoId, currentUser, false);
+    emitV2Updated(ordemServicoId, { tipo: "assinatura_recebimento" });
+    return pdfData;
+  } catch (error) {
+    emitV2Updated(ordemServicoId, { tipo: "assinatura_recebimento" });
+    return {
+      ...data,
+      pdf_warning: "Assinatura salva, mas nao foi possivel gerar o PDF do contrato agora.",
+    };
+  }
 }
 
 async function registrarComunicacaoWhatsApp(ordemServicoId, payload, currentUser) {
@@ -1539,6 +1667,14 @@ function buildGeneratedPdfFilename(orcamentoId) {
   return `orcamento-${orcamentoId}-${Date.now()}.pdf`;
 }
 
+function isManagedAssinaturaPdf(pdfUrl = "") {
+  return String(pdfUrl || "").startsWith("/uploads/assinaturas-pdf/");
+}
+
+function buildGeneratedAssinaturaPdfFilename(ordemServicoId) {
+  return `assinatura-os-${ordemServicoId}-${Date.now()}.pdf`;
+}
+
 async function saveGeneratedOrcamentoPdf(orcamentoId, currentUser, registerHistory = true) {
   const data = await db.transaction(async (trx) => {
     const orcamento = await orcamentoV2Repository.findById(orcamentoId, trx);
@@ -1591,6 +1727,59 @@ async function saveGeneratedOrcamentoPdf(orcamentoId, currentUser, registerHisto
 
   emitV2Updated(data.ordemServico.id, { tipo: "orcamento_pdf" });
   return data;
+}
+
+async function saveGeneratedAssinaturaRecebimentoPdf(ordemServicoId, currentUser, registerHistory = false) {
+  const data = await db.transaction(async (trx) => {
+    const ordemServico = await loadOrdemServicoBundle(ordemServicoId, trx);
+    const assinatura = ordemServico.assinatura_recebimento;
+
+    if (!assinatura) {
+      throw new ApiError(404, "Assinatura de recebimento nao encontrada para esta OS.");
+    }
+
+    const filename = buildGeneratedAssinaturaPdfFilename(ordemServicoId);
+    const pdfUrl = `/uploads/assinaturas-pdf/${filename}`;
+    const filePath = path.resolve(assinaturasPdfDir, filename);
+    const buffer = generateAssinaturaRecebimentoPdfBuffer({
+      ordem: ordemServico,
+      assinatura,
+    });
+
+    fs.writeFileSync(filePath, buffer);
+
+    if (isManagedAssinaturaPdf(assinatura.pdf_url)) {
+      const previousPath = path.resolve(process.cwd(), `.${assinatura.pdf_url}`);
+      if (previousPath !== filePath && fs.existsSync(previousPath)) {
+        fs.unlinkSync(previousPath);
+      }
+    }
+
+    await trx("assinaturas_recebimento")
+      .where({ ordem_servico_id: ordemServicoId })
+      .update({
+        pdf_url: pdfUrl,
+        atualizado_em: db.fn.now(),
+      });
+
+    if (registerHistory) {
+      await appendHistoricoOrdemServico(trx, {
+        ordemServicoId,
+        usuarioId: currentUser.id,
+        acao: "ASSINATURA_RECEBIMENTO_PDF_GERADO",
+        observacao: "PDF do contrato de recebimento gerado automaticamente.",
+      });
+    }
+
+    return loadOrdemServicoBundle(ordemServicoId, trx);
+  });
+
+  emitV2Updated(ordemServicoId, { tipo: "assinatura_recebimento_pdf" });
+  return data;
+}
+
+async function generateAssinaturaRecebimentoPdf(ordemServicoId, currentUser) {
+  return saveGeneratedAssinaturaRecebimentoPdf(ordemServicoId, currentUser, true);
 }
 
 async function createOrcamento(ordemServicoId, payload, currentUser) {
@@ -1818,6 +2007,8 @@ module.exports = {
   listItemSuggestions,
   addFotosEntrada,
   finalizarCadastroFotos,
+  registrarAssinaturaRecebimento,
+  generateAssinaturaRecebimentoPdf,
   registrarComunicacaoWhatsApp,
   confirmarRetirada,
   createOrcamento,

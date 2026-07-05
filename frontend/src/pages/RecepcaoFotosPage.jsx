@@ -2,13 +2,119 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Modal from "../components/common/Modal";
 import AppIcon from "../components/common/AppIcon";
+import SignaturePad from "../components/common/SignaturePad";
 import StatusBadge from "../components/common/StatusBadge";
 import {
   finalizarCadastroFotosV2,
+  generateAssinaturaRecebimentoPdfV2,
+  getOrdemServicoV2,
   listOrdensServicoV2,
+  registrarAssinaturaRecebimentoV2,
   registrarComunicacaoWhatsAppV2,
   uploadFotosEntradaV2,
 } from "../services/ordemServicoV2Service";
+
+function formatDateTime(value) {
+  if (!value) {
+    return "Nao informado";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function getApiOrigin() {
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3333/api";
+  return apiUrl.replace(/\/api\/?$/, "");
+}
+
+function getPublicAssetUrl(path = "") {
+  if (!path) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  return `${getApiOrigin()}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+function getLatestOrcamento(ordem) {
+  return [...(ordem?.orcamentos || [])].sort((left, right) => {
+    if (Number(left.versao_numero || 0) !== Number(right.versao_numero || 0)) {
+      return Number(right.versao_numero || 0) - Number(left.versao_numero || 0);
+    }
+
+    return Number(right.id || 0) - Number(left.id || 0);
+  })[0] || null;
+}
+
+function buildReceiptContractData(ordem, signedAt = new Date()) {
+  if (!ordem) {
+    return {
+      titulo: "Termo de recebimento das fotos da motocicleta",
+      subtitulo: "",
+      campos: [],
+      clausulas: [],
+      dataAceite: "Nao informado",
+    };
+  }
+
+  const latestOrcamento = getLatestOrcamento(ordem);
+  const motoIdentificacao = [
+    ordem.motocicleta_marca,
+    ordem.motocicleta_modelo,
+    ordem.motocicleta_ano,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return {
+    titulo: "Termo de recebimento das fotos da motocicleta",
+    subtitulo: "Documento de aceite digital realizado no tablet durante a recepcao da motocicleta.",
+    campos: [
+      { label: "Cliente", value: ordem.cliente_nome || "Nao informado" },
+      { label: "Telefone", value: ordem.cliente_telefone || "Nao informado" },
+      { label: "Motocicleta", value: `${motoIdentificacao || "Nao informada"} - ${ordem.motocicleta_placa || "Sem placa"}` },
+      { label: "Numero da OS", value: ordem.numero_os || "Nao informada" },
+      { label: "Orcamento de referencia", value: latestOrcamento?.numero_externo || "Ainda nao gerado" },
+      { label: "Data do aceite", value: formatDateTime(signedAt) },
+    ],
+    clausulas: [
+      "Declaro que recebi no WhatsApp as fotos de entrada da motocicleta acima descrita.",
+      "Declaro estar ciente de que a oficina podera realizar analise tecnica, diagnostico e elaboracao de orcamento conforme a necessidade do atendimento.",
+      "Declaro ainda estar ciente de que podera haver cobranca referente ao diagnostico e/ou elaboracao do orcamento, conforme avaliacao do servico executado.",
+    ],
+    dataAceite: formatDateTime(signedAt),
+  };
+}
+
+function buildWhatsappReceiptExcerpt(ordem) {
+  const receipt = ordem?.assinatura_recebimento;
+  const pdfUrl = getPublicAssetUrl(receipt?.pdf_url);
+
+  if (!receipt) {
+    return "";
+  }
+
+  return [
+    "",
+    "Resumo do aceite registrado:",
+    `OS ${receipt.numero_os || ordem.numero_os}`,
+    `Assinado em ${formatDateTime(receipt.assinado_em)}`,
+    pdfUrl ? `PDF do contrato: ${pdfUrl}` : null,
+    "Cliente ciente do recebimento das fotos e da possivel cobranca de diagnostico/orcamento.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 function RecepcaoFotosPage() {
   const navigate = useNavigate();
@@ -18,7 +124,14 @@ function RecepcaoFotosPage() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [signatureDataUrl, setSignatureDataUrl] = useState("");
+  const [signatureSavedAt, setSignatureSavedAt] = useState(null);
+  const [receiptChecks, setReceiptChecks] = useState({
+    recebeuFotosWhatsapp: true,
+    cientePossivelCobranca: true,
+  });
 
   async function loadOrdens() {
     const data = await listOrdensServicoV2();
@@ -50,10 +163,58 @@ function RecepcaoFotosPage() {
     }
   }, [ordensPendentes, searchParams, selectedOrder, setSearchParams]);
 
+  useEffect(() => {
+    if (!selectedOrder?.id) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadSelectedOrderDetails() {
+      setDetailsLoading(true);
+
+      try {
+        const data = await getOrdemServicoV2(selectedOrder.id);
+
+        if (cancelled) {
+          return;
+        }
+
+        setSelectedOrder((current) => (current && Number(current.id) === Number(data.id) ? data : current));
+        setSignatureDataUrl(data.assinatura_recebimento?.assinatura_data_url || "");
+        setSignatureSavedAt(data.assinatura_recebimento?.assinado_em || null);
+        setReceiptChecks({
+          recebeuFotosWhatsapp: data.assinatura_recebimento?.recebeu_fotos_whatsapp ?? true,
+          cientePossivelCobranca: data.assinatura_recebimento?.ciente_possivel_cobranca ?? true,
+        });
+      } catch {
+        if (!cancelled) {
+          setFeedback("Nao foi possivel carregar os detalhes completos desta OS.");
+        }
+      } finally {
+        if (!cancelled) {
+          setDetailsLoading(false);
+        }
+      }
+    }
+
+    void loadSelectedOrderDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOrder?.id]);
+
   function closePhotoFlow() {
     setSelectedOrder(null);
     setPendingFiles([]);
     setFeedback("");
+    setSignatureDataUrl("");
+    setSignatureSavedAt(null);
+    setReceiptChecks({
+      recebeuFotosWhatsapp: true,
+      cientePossivelCobranca: true,
+    });
 
     if (searchParams.get("ordemId")) {
       setSearchParams({}, { replace: true });
@@ -64,6 +225,12 @@ function RecepcaoFotosPage() {
     setSelectedOrder(ordem);
     setPendingFiles([]);
     setFeedback("");
+    setSignatureDataUrl(ordem.assinatura_recebimento?.assinatura_data_url || "");
+    setSignatureSavedAt(ordem.assinatura_recebimento?.assinado_em || null);
+    setReceiptChecks({
+      recebeuFotosWhatsapp: ordem.assinatura_recebimento?.recebeu_fotos_whatsapp ?? true,
+      cientePossivelCobranca: ordem.assinatura_recebimento?.ciente_possivel_cobranca ?? true,
+    });
   }
 
   function handleOpenSystemPhotos() {
@@ -97,7 +264,9 @@ function RecepcaoFotosPage() {
       setFeedback(`Fotos enviadas com sucesso. Total atual: ${nextCount}.`);
       setPendingFiles([]);
       await loadOrdens();
-      setSelectedOrder((current) => (current ? { ...current, fotos_entrada_count: nextCount } : current));
+      setSelectedOrder(bundle);
+      setSignatureDataUrl(bundle.assinatura_recebimento?.assinatura_data_url || signatureDataUrl);
+      setSignatureSavedAt(bundle.assinatura_recebimento?.assinado_em || signatureSavedAt);
     } catch (requestError) {
       setFeedback(requestError?.response?.data?.message || "Nao foi possivel enviar as fotos.");
     } finally {
@@ -123,6 +292,7 @@ function RecepcaoFotosPage() {
       "As fotos da moto registradas no ato da entrega seguem abaixo para seu acompanhamento.",
       ordem.buscar_moto && ordem.endereco_retirada ? `Tambem registramos a solicitacao de busca da moto no endereco informado: ${ordem.endereco_retirada}.` : null,
       "Caso opte por nao realizar o servico, podera ser cobrado o valor referente a analise de diagnostico.",
+      buildWhatsappReceiptExcerpt(ordem),
       "Permanecemos a disposicao.",
     ]
       .filter(Boolean)
@@ -164,6 +334,89 @@ function RecepcaoFotosPage() {
     }
   }
 
+  async function handleSalvarAssinatura() {
+    if (!selectedOrder) {
+      return;
+    }
+
+    if (selectedOrder.assinatura_recebimento) {
+      setFeedback("Esta assinatura ja foi salva e nao pode mais ser alterada.");
+      return;
+    }
+
+    if (!signatureDataUrl) {
+      setFeedback("Colete a assinatura do cliente no campo abaixo antes de salvar.");
+      return;
+    }
+
+    setBusy(true);
+    setFeedback("");
+
+    try {
+      const bundle = await registrarAssinaturaRecebimentoV2(selectedOrder.id, {
+        assinatura_data_url: signatureDataUrl,
+        recebeu_fotos_whatsapp: receiptChecks.recebeuFotosWhatsapp,
+        ciente_possivel_cobranca: receiptChecks.cientePossivelCobranca,
+      });
+
+      setSelectedOrder(bundle);
+      setSignatureDataUrl(bundle.assinatura_recebimento?.assinatura_data_url || signatureDataUrl);
+      setSignatureSavedAt(bundle.assinatura_recebimento?.assinado_em || new Date().toISOString());
+      await loadOrdens();
+      setFeedback(bundle.pdf_warning || "Assinatura do cliente registrada na OS com sucesso. PDF do contrato gerado.");
+    } catch (requestError) {
+      setFeedback(requestError?.response?.data?.message || "Nao foi possivel registrar a assinatura do cliente.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleLimparAssinatura() {
+    if (selectedOrder?.assinatura_recebimento) {
+      setFeedback("Esta assinatura ja foi salva e nao pode mais ser alterada.");
+      return;
+    }
+
+    setSignatureDataUrl("");
+    setSignatureSavedAt(null);
+    setFeedback("");
+  }
+
+  async function handleOpenContratoPdf() {
+    if (!selectedOrder?.assinatura_recebimento) {
+      setFeedback("Ainda nao ha contrato assinado para esta OS.");
+      return;
+    }
+
+    let currentOrder = selectedOrder;
+    let pdfUrl = getPublicAssetUrl(currentOrder.assinatura_recebimento?.pdf_url);
+
+    if (!pdfUrl) {
+      setBusy(true);
+      setFeedback("");
+
+      try {
+        const bundle = await generateAssinaturaRecebimentoPdfV2(selectedOrder.id);
+        currentOrder = bundle;
+        setSelectedOrder(bundle);
+        await loadOrdens();
+        pdfUrl = getPublicAssetUrl(bundle.assinatura_recebimento?.pdf_url);
+      } catch (requestError) {
+        setFeedback(requestError?.response?.data?.message || "Nao foi possivel gerar o PDF do contrato.");
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    if (!pdfUrl) {
+      setFeedback("O PDF do contrato ainda nao esta disponivel para esta OS.");
+      return;
+    }
+
+    window.open(pdfUrl, "_blank", "noopener,noreferrer");
+  }
+
   async function handleFinalizarCadastro() {
     if (!selectedOrder) {
       return;
@@ -185,6 +438,9 @@ function RecepcaoFotosPage() {
       setBusy(false);
     }
   }
+
+  const contractData = buildReceiptContractData(selectedOrder, signatureSavedAt || new Date());
+  const isSignatureLocked = Boolean(selectedOrder?.assinatura_recebimento);
 
   return (
     <section className="page-section foto-flow-page">
@@ -246,7 +502,7 @@ function RecepcaoFotosPage() {
               <AppIcon name="check" size={16} />
               Finalizar cadastro
             </button>
-            <button type="button" className="primary-button" onClick={handleEnviarFotos} disabled={busy || !pendingFiles.length}>
+            <button type="button" className="primary-button" onClick={handleEnviarFotos} disabled={busy || detailsLoading || !pendingFiles.length}>
               <AppIcon name="send" size={16} />
               {busy ? "Enviando..." : "Enviar fotos"}
             </button>
@@ -267,7 +523,7 @@ function RecepcaoFotosPage() {
         />
 
         <div className="foto-flow-modal-actions">
-          <button type="button" className="foto-flow-modal-action is-whatsapp" onClick={handleWhatsAppCliente} disabled={busy}>
+          <button type="button" className="foto-flow-modal-action is-whatsapp" onClick={handleWhatsAppCliente} disabled={busy || detailsLoading}>
             <span className="foto-flow-modal-action-icon">
               <AppIcon name="whatsapp" size={22} />
             </span>
@@ -277,7 +533,7 @@ function RecepcaoFotosPage() {
             </span>
           </button>
 
-          <button type="button" className="foto-flow-modal-action is-camera" onClick={handleOpenSystemPhotos} disabled={busy}>
+          <button type="button" className="foto-flow-modal-action is-camera" onClick={handleOpenSystemPhotos} disabled={busy || detailsLoading}>
             <span className="foto-flow-modal-action-icon">
               <AppIcon name="camera" size={22} />
             </span>
@@ -288,9 +544,150 @@ function RecepcaoFotosPage() {
           </button>
         </div>
 
+        <div className="workspace-card foto-flow-signature-shell">
+          <div className="workspace-heading">
+            <div>
+              <p className="eyebrow">Aceite digital</p>
+              <h2>Contrato de recebimento</h2>
+              <p className="subtitle">Organize o aceite do cliente no tablet com os dados da OS, as condicoes do atendimento e a assinatura eletronicamente registrada.</p>
+            </div>
+            {selectedOrder?.assinatura_recebimento ? (
+              <span className="summary-pill strong">Assinado</span>
+            ) : (
+              <span className="summary-pill">Pendente</span>
+            )}
+          </div>
+
+          <div className="foto-flow-contract">
+            <div className="foto-flow-contract-header">
+              <div>
+                <p className="eyebrow">Documento</p>
+                <h3>{contractData.titulo}</h3>
+                <p>{contractData.subtitulo}</p>
+              </div>
+              <div className="foto-flow-contract-stamp">
+                <span>Status</span>
+                <strong>{selectedOrder?.assinatura_recebimento ? "Assinado" : "Aguardando assinatura"}</strong>
+              </div>
+            </div>
+
+            <div className="foto-flow-contract-meta">
+              {contractData.campos.map((campo) => (
+                <article className="foto-flow-contract-meta-card" key={campo.label}>
+                  <span>{campo.label}</span>
+                  <strong>{campo.value}</strong>
+                </article>
+              ))}
+            </div>
+
+            <div className="foto-flow-contract-body">
+              <div className="foto-flow-contract-clause">
+                <span>Declaracoes do cliente</span>
+                <ol className="foto-flow-contract-list">
+                  {contractData.clausulas.map((clausula) => (
+                    <li key={clausula}>{clausula}</li>
+                  ))}
+                </ol>
+              </div>
+
+              <div className="foto-flow-contract-clause">
+                <span>Confirmacoes registradas no atendimento</span>
+                <div className="foto-flow-contract-checks">
+                  <label className="checkbox-row foto-flow-checkbox is-contract">
+                    <input
+                      type="checkbox"
+                      checked={receiptChecks.recebeuFotosWhatsapp}
+                      onChange={(event) =>
+                        setReceiptChecks((current) => ({
+                          ...current,
+                          recebeuFotosWhatsapp: event.target.checked,
+                        }))
+                      }
+                      disabled={busy || detailsLoading || isSignatureLocked}
+                    />
+                    <span>Cliente confirma que recebeu as fotos no WhatsApp.</span>
+                  </label>
+
+                  <label className="checkbox-row foto-flow-checkbox is-contract">
+                    <input
+                      type="checkbox"
+                      checked={receiptChecks.cientePossivelCobranca}
+                      onChange={(event) =>
+                        setReceiptChecks((current) => ({
+                          ...current,
+                          cientePossivelCobranca: event.target.checked,
+                        }))
+                      }
+                      disabled={busy || detailsLoading || isSignatureLocked}
+                    />
+                    <span>Cliente esta ciente de possivel cobranca de diagnostico e/ou orcamento.</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="foto-flow-contract-signature">
+              <div className="foto-flow-signature-panel">
+                <strong className="foto-flow-section-label">Assinatura eletronica do cliente</strong>
+                <p className="foto-flow-signature-copy">
+                  {isSignatureLocked
+                    ? "Contrato ja assinado e bloqueado para alteracoes."
+                    : "O cliente pode assinar com o dedo diretamente no tablet. A assinatura fica anexada a esta OS."}
+                </p>
+                <SignaturePad value={signatureDataUrl} onChange={setSignatureDataUrl} disabled={busy || detailsLoading || isSignatureLocked} />
+              </div>
+
+              <div className="foto-flow-signature-panel is-side">
+                <div className="detail-row foto-flow-signature-status">
+                  <strong>Status do aceite</strong>
+                  <p>
+                    {selectedOrder?.assinatura_recebimento
+                      ? `Assinatura registrada em ${formatDateTime(selectedOrder.assinatura_recebimento.assinado_em)} e bloqueada para alteracoes.`
+                      : "Ainda nao ha assinatura registrada nesta OS."}
+                  </p>
+                </div>
+
+                <div className="detail-row foto-flow-signature-status">
+                  <strong>Validade do registro</strong>
+                  <p>
+                    Este aceite digital fica salvo no historico da OS, aparece no prontuario da motocicleta
+                    {selectedOrder?.assinatura_recebimento?.pdf_url ? " e possui PDF gerado automaticamente." : " e aguardara o PDF assim que o contrato for salvo."}
+                  </p>
+                </div>
+
+                <div className="button-row foto-flow-signature-actions">
+                  <button type="button" className="ghost-button" onClick={handleLimparAssinatura} disabled={busy || detailsLoading || isSignatureLocked}>
+                    <AppIcon name="trash" size={16} />
+                    Limpar assinatura
+                  </button>
+                  <button type="button" className="primary-button" onClick={() => void handleSalvarAssinatura()} disabled={busy || detailsLoading || isSignatureLocked}>
+                    <AppIcon name="pencil" size={16} />
+                    {isSignatureLocked ? "Contrato bloqueado" : "Salvar contrato"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleOpenContratoPdf()}
+                    disabled={busy || detailsLoading || !selectedOrder?.assinatura_recebimento}
+                  >
+                    <AppIcon name="printer" size={16} />
+                    {selectedOrder?.assinatura_recebimento?.pdf_url ? "Abrir PDF" : "Gerar PDF"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="detail-row">
           <strong>Situacao atual</strong>
-          <p>{selectedOrder ? `${selectedOrder.fotos_entrada_count || 0} foto(s) ja registradas para esta moto.` : ""}</p>
+          <p>
+            {detailsLoading
+              ? "Carregando detalhes completos da OS..."
+              : selectedOrder
+                ? `${selectedOrder.fotos_entrada_count || 0} foto(s) ja registradas para esta moto.`
+                : ""}
+          </p>
         </div>
 
         <div className="detail-row">

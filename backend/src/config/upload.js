@@ -7,11 +7,13 @@ const { ApiError } = require("../utils/ApiError");
 const mecanicosDir = path.resolve(process.cwd(), uploadDir, "mecanicos");
 const fotosEntradaDir = path.resolve(process.cwd(), uploadDir, "fotos-entrada");
 const orcamentosPdfDir = path.resolve(process.cwd(), uploadDir, "orcamentos-pdf");
+const assinaturasPdfDir = path.resolve(process.cwd(), uploadDir, "assinaturas-pdf");
 
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 fs.mkdirSync(mecanicosDir, { recursive: true });
 fs.mkdirSync(fotosEntradaDir, { recursive: true });
 fs.mkdirSync(orcamentosPdfDir, { recursive: true });
+fs.mkdirSync(assinaturasPdfDir, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -96,6 +98,7 @@ module.exports = {
   mecanicosDir,
   fotosEntradaDir,
   orcamentosPdfDir,
+  assinaturasPdfDir,
   uploadMecanicoFoto,
   uploadFotosEntrada,
   uploadOrcamentoPdf,

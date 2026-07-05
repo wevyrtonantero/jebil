@@ -17,6 +17,8 @@ const {
   uploadFotosEntradaV2,
   finalizarCadastroFotosV2,
   registrarComunicacaoWhatsAppV2,
+  registrarAssinaturaRecebimentoV2,
+  generateAssinaturaRecebimentoPdfV2,
   confirmarRetiradaV2,
   createOrcamentoV2,
   updateOrcamentoStatusV2,
@@ -30,33 +32,37 @@ const { authMiddleware } = require("../middlewares/authMiddleware");
 const { roleMiddleware } = require("../middlewares/roleMiddleware");
 const { uploadFotosEntrada, uploadOrcamentoPdf } = require("../config/upload");
 const { uploadErrorMiddleware } = require("../middlewares/uploadErrorMiddleware");
+const { perfisAplicacao } = require("../utils/roles");
 
 const router = Router();
 
 router.use(authMiddleware);
+router.use(roleMiddleware(perfisAplicacao));
 
-router.get("/", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"]), listOrdensServicoV2);
-router.get("/sugestoes-itens", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"]), listItemSuggestionsV2);
-router.get("/operacional/lista", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"]), listOperacionalV2);
-router.get("/prontuario/motocicletas/:motocicletaId", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"]), getProntuarioMotocicletaV2);
-router.get("/:id", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"]), getOrdemServicoV2);
-router.post("/", roleMiddleware(["ADMIN", "RECEPCAO"]), createOrdemServicoV2);
-router.post("/:ordemId/fotos-entrada", roleMiddleware(["ADMIN", "RECEPCAO"]), uploadFotosEntrada.array("fotos"), uploadErrorMiddleware, uploadFotosEntradaV2);
-router.patch("/:ordemId/finalizar-cadastro-fotos", roleMiddleware(["ADMIN", "RECEPCAO"]), finalizarCadastroFotosV2);
-router.post("/:ordemId/comunicacoes-whatsapp", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"]), registrarComunicacaoWhatsAppV2);
-router.patch("/:ordemId/confirmar-retirada", roleMiddleware(["ADMIN", "RECEPCAO"]), confirmarRetiradaV2);
-router.post("/:ordemId/orcamentos", roleMiddleware(["ADMIN", "ORCAMENTISTA"]), createOrcamentoV2);
-router.post("/:ordemId/items/:itemId/execucao", roleMiddleware(["ADMIN", "OFICINA"]), atribuirExecucaoV2);
-router.post("/:ordemId/items/:itemId/previsoes-pecas", roleMiddleware(["ADMIN", "OFICINA"]), registrarPrevisaoPecaV2);
-router.post("/orcamentos/:id/pdf", roleMiddleware(["ADMIN", "ORCAMENTISTA"]), uploadOrcamentoPdf.single("arquivo"), uploadErrorMiddleware, uploadOrcamentoPdfV2);
-router.post("/orcamentos/:id/gerar-pdf", roleMiddleware(["ADMIN", "ORCAMENTISTA"]), generateOrcamentoPdfV2);
-router.post("/:ordemId/diagnosticos", roleMiddleware(["ADMIN", "OFICINA"]), createDiagnosticoV2);
-router.post("/diagnosticos/:id/itens-sugeridos", roleMiddleware(["ADMIN", "OFICINA"]), adicionarItensSugeridosDiagnosticoV2);
-router.patch("/orcamentos/:id/status", roleMiddleware(["ADMIN", "ORCAMENTISTA"]), updateOrcamentoStatusV2);
-router.patch("/:ordemId/items/:itemId/retomar-peca", roleMiddleware(["ADMIN", "OFICINA"]), retomarItemDaPecaV2);
-router.patch("/diagnosticos/:id/concluir", roleMiddleware(["ADMIN", "OFICINA"]), concluirDiagnosticoV2);
-router.patch("/:ordemId/items/:itemId/status", roleMiddleware(["ADMIN", "OFICINA"]), updateItemStatusV2);
-router.patch("/:ordemId/items/:itemId/autorizacao", roleMiddleware(["ADMIN", "RECEPCAO", "ORCAMENTISTA"]), updateItemAutorizacaoV2);
-router.patch("/:ordemId/items/:itemId/pagamento", roleMiddleware(["ADMIN", "RECEPCAO", "ORCAMENTISTA"]), updateItemPagamentoV2);
+router.get("/", listOrdensServicoV2);
+router.get("/sugestoes-itens", listItemSuggestionsV2);
+router.get("/operacional/lista", listOperacionalV2);
+router.get("/prontuario/motocicletas/:motocicletaId", getProntuarioMotocicletaV2);
+router.get("/:id", getOrdemServicoV2);
+router.post("/", createOrdemServicoV2);
+router.post("/:ordemId/fotos-entrada", uploadFotosEntrada.array("fotos"), uploadErrorMiddleware, uploadFotosEntradaV2);
+router.patch("/:ordemId/finalizar-cadastro-fotos", finalizarCadastroFotosV2);
+router.post("/:ordemId/comunicacoes-whatsapp", registrarComunicacaoWhatsAppV2);
+router.post("/:ordemId/assinatura-recebimento", registrarAssinaturaRecebimentoV2);
+router.post("/:ordemId/assinatura-recebimento/pdf", generateAssinaturaRecebimentoPdfV2);
+router.patch("/:ordemId/confirmar-retirada", confirmarRetiradaV2);
+router.post("/:ordemId/orcamentos", createOrcamentoV2);
+router.post("/:ordemId/items/:itemId/execucao", atribuirExecucaoV2);
+router.post("/:ordemId/items/:itemId/previsoes-pecas", registrarPrevisaoPecaV2);
+router.post("/orcamentos/:id/pdf", uploadOrcamentoPdf.single("arquivo"), uploadErrorMiddleware, uploadOrcamentoPdfV2);
+router.post("/orcamentos/:id/gerar-pdf", generateOrcamentoPdfV2);
+router.post("/:ordemId/diagnosticos", createDiagnosticoV2);
+router.post("/diagnosticos/:id/itens-sugeridos", adicionarItensSugeridosDiagnosticoV2);
+router.patch("/orcamentos/:id/status", updateOrcamentoStatusV2);
+router.patch("/:ordemId/items/:itemId/retomar-peca", retomarItemDaPecaV2);
+router.patch("/diagnosticos/:id/concluir", concluirDiagnosticoV2);
+router.patch("/:ordemId/items/:itemId/status", updateItemStatusV2);
+router.patch("/:ordemId/items/:itemId/autorizacao", updateItemAutorizacaoV2);
+router.patch("/:ordemId/items/:itemId/pagamento", updateItemPagamentoV2);
 
 module.exports = router;

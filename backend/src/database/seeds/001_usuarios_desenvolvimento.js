@@ -4,15 +4,21 @@ exports.seed = async function seed(knex) {
   const agora = knex.fn.now();
   const usuarios = [
     {
-      nome: "Administrador",
-      email: process.env.SEED_ADMIN_EMAIL || "admin@jebil.local",
-      senha: process.env.SEED_ADMIN_PASSWORD || "123",
-      perfil: "ADMIN",
+      nome: "Diretoria",
+      email: process.env.SEED_DIRETORIA_EMAIL || process.env.SEED_ADMIN_EMAIL || "diretoria@jebil.local",
+      senha: process.env.SEED_DIRETORIA_PASSWORD || process.env.SEED_ADMIN_PASSWORD || "123",
+      perfil: "DIRETORIA",
     },
     {
       nome: "Recepcao",
       email: process.env.SEED_RECEPCAO_EMAIL || "recepcao@jebil.local",
       senha: process.env.SEED_RECEPCAO_PASSWORD || "123",
+      perfil: "RECEPCAO",
+    },
+    {
+      nome: "Operacao",
+      email: process.env.SEED_OPERACAO_EMAIL || "operacaoo",
+      senha: process.env.SEED_OPERACAO_PASSWORD || "123",
       perfil: "RECEPCAO",
     },
     {
@@ -22,10 +28,10 @@ exports.seed = async function seed(knex) {
       perfil: "OFICINA",
     },
     {
-      nome: "Orcamentista",
-      email: process.env.SEED_ORCAMENTISTA_EMAIL || "orcamentista@jebil.local",
-      senha: process.env.SEED_ORCAMENTISTA_PASSWORD || "123",
-      perfil: "ORCAMENTISTA",
+      nome: "Supervisao",
+      email: process.env.SEED_SUPERVISAO_EMAIL || process.env.SEED_ORCAMENTISTA_EMAIL || "supervisao@jebil.local",
+      senha: process.env.SEED_SUPERVISAO_PASSWORD || process.env.SEED_ORCAMENTISTA_PASSWORD || "123",
+      perfil: "SUPERVISAO",
     },
   ];
 

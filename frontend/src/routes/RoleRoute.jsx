@@ -1,10 +1,11 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { hasAllowedRole } from "../utils/roles";
 
 function RoleRoute({ allowedRoles }) {
   const { user } = useAuth();
 
-  if (!user || !allowedRoles.includes(user.perfil)) {
+  if (!user || !hasAllowedRole(user.perfil, allowedRoles)) {
     return <Navigate to="/acesso-negado" replace />;
   }
 

@@ -2,15 +2,17 @@ import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { updateOwnPassword, updateSystemPassword } from "../services/authService";
 import AppIcon from "../components/common/AppIcon";
+import { DIRECTOR_ROLES, MANAGED_PASSWORD_ROLES, getRoleLabel, hasAllowedRole } from "../utils/roles";
 
 const sectorLabels = {
   RECEPCAO: "Recepcao",
   OFICINA: "Oficina",
+  SUPERVISAO: "Supervisao",
 };
 
 function PasswordManagementPage() {
   const { user } = useAuth();
-  const isAdmin = user?.perfil === "ADMIN";
+  const isDirector = hasAllowedRole(user?.perfil, DIRECTOR_ROLES);
   const [ownForm, setOwnForm] = useState({
     senhaAtual: "",
     novaSenha: "",
@@ -19,6 +21,7 @@ function PasswordManagementPage() {
   const [sectorForm, setSectorForm] = useState({
     RECEPCAO: { novaSenha: "", confirmarSenha: "" },
     OFICINA: { novaSenha: "", confirmarSenha: "" },
+    SUPERVISAO: { novaSenha: "", confirmarSenha: "" },
   });
   const [savingKey, setSavingKey] = useState("");
   const [feedback, setFeedback] = useState({
@@ -127,7 +130,7 @@ function PasswordManagementPage() {
             <div>
               <p className="eyebrow">Seguranca</p>
               <h2>Gerenciamento de senhas</h2>
-              <p className="subtitle">Troque sua senha e, no acesso administrativo, atualize as senhas dos setores.</p>
+              <p className="subtitle">Troque sua senha e, na diretoria, atualize as senhas dos demais acessos.</p>
             </div>
           </div>
         </div>
@@ -136,7 +139,7 @@ function PasswordManagementPage() {
           <article className="detail-row password-card">
             <div className="password-card-header">
               <strong>Minha senha</strong>
-              <span className="helper-copy">{user?.perfil === "ADMIN" ? "Administrador" : user?.perfil}</span>
+              <span className="helper-copy">{getRoleLabel(user?.perfil) || user?.perfil}</span>
             </div>
 
             <div className="field-grid">
@@ -173,15 +176,15 @@ function PasswordManagementPage() {
             </button>
           </article>
 
-          {isAdmin ? (
+          {isDirector ? (
             <article className="detail-row password-card">
               <div className="password-card-header">
                 <strong>Senhas dos setores</strong>
-                <span className="helper-copy">Recepcao e oficina</span>
+                <span className="helper-copy">Recepcao, oficina e supervisao</span>
               </div>
 
               <div className="password-sector-stack">
-                {Object.entries(sectorLabels).map(([perfil, label]) => (
+                {MANAGED_PASSWORD_ROLES.map((perfil) => [perfil, sectorLabels[perfil]]).map(([perfil, label]) => (
                   <div key={perfil} className="password-sector-block">
                     <div className="password-sector-head">
                       <strong>{label}</strong>

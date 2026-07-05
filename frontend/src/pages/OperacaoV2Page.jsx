@@ -17,7 +17,7 @@ import {
 } from "../services/ordemServicoV2Service";
 import { formatPlate } from "../utils/formatters";
 
-const ORCAMENTISTA_WHATSAPP = "+55 11 99452-9009";
+const ORCAMENTISTA_WHATSAPP = "+55 11 97454-0115";
 
 const searchScopes = [
   { id: "placa", label: "Buscar por placa", kind: "text" },
@@ -83,7 +83,7 @@ function getResumoItens(ordem) {
 
 function isDiagnosticPlaceholderItem(item) {
   const descricao = String(item?.descricao || "").trim().toLowerCase();
-  return descricao === "diagnostico inicial" || (Boolean(item?.exige_diagnostico) && !Boolean(item?.execucao_direta));
+  return descricao === "diagnostico inicial";
 }
 
 function matchesQueue(ordem, scopeId) {

@@ -1,4 +1,5 @@
 const { ApiError } = require("../utils/ApiError");
+const { hasAllowedRole } = require("../utils/roles");
 
 function roleMiddleware(allowedRoles) {
   return function handleRole(req, _res, next) {
@@ -7,7 +8,7 @@ function roleMiddleware(allowedRoles) {
       return;
     }
 
-    if (!allowedRoles.includes(req.user.perfil)) {
+    if (!hasAllowedRole(req.user.perfil, allowedRoles)) {
       next(new ApiError(403, "Voce nao tem permissao para esta operacao."));
       return;
     }

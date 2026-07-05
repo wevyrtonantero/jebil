@@ -54,6 +54,16 @@ async function registrarComunicacaoWhatsAppV2(ordemId, payload) {
   return response.data.data;
 }
 
+async function registrarAssinaturaRecebimentoV2(ordemId, payload) {
+  const response = await api.post(`/v2/ordens-servico/${ordemId}/assinatura-recebimento`, payload);
+  return response.data.data;
+}
+
+async function generateAssinaturaRecebimentoPdfV2(ordemId) {
+  const response = await api.post(`/v2/ordens-servico/${ordemId}/assinatura-recebimento/pdf`);
+  return response.data.data;
+}
+
 async function confirmarRetiradaV2(ordemId) {
   const response = await api.patch(`/v2/ordens-servico/${ordemId}/confirmar-retirada`);
   return response.data.data;
@@ -154,6 +164,8 @@ export {
   uploadFotosEntradaV2,
   finalizarCadastroFotosV2,
   registrarComunicacaoWhatsAppV2,
+  registrarAssinaturaRecebimentoV2,
+  generateAssinaturaRecebimentoPdfV2,
   confirmarRetiradaV2,
   createOrcamentoV2,
   updateOrcamentoStatusV2,

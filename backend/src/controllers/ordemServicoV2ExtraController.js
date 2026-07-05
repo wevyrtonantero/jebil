@@ -3,6 +3,7 @@ const { asyncHandler } = require("../utils/asyncHandler");
 const ordemServicoV2Service = require("../services/v2/ordemServicoV2Service");
 const {
   validateRegistrarComunicacaoWhatsAppPayload,
+  validateRegistrarAssinaturaRecebimentoPayload,
   validateCreateOrcamentoPayload,
   validateUpdateOrcamentoStatusPayload,
   validateRegistrarPrevisaoPecaPayload,
@@ -24,6 +25,17 @@ const registrarComunicacaoWhatsAppV2 = asyncHandler(async (req, res) => {
   const payload = validateRegistrarComunicacaoWhatsAppPayload(req.body);
   const data = await ordemServicoV2Service.registrarComunicacaoWhatsApp(Number(req.params.ordemId), payload, req.user);
   sendSuccess(res, data, "Comunicacao WhatsApp V2 registrada com sucesso.", 201);
+});
+
+const registrarAssinaturaRecebimentoV2 = asyncHandler(async (req, res) => {
+  const payload = validateRegistrarAssinaturaRecebimentoPayload(req.body);
+  const data = await ordemServicoV2Service.registrarAssinaturaRecebimento(Number(req.params.ordemId), payload, req.user);
+  sendSuccess(res, data, "Assinatura de recebimento registrada com sucesso.", 201);
+});
+
+const generateAssinaturaRecebimentoPdfV2 = asyncHandler(async (req, res) => {
+  const data = await ordemServicoV2Service.generateAssinaturaRecebimentoPdf(Number(req.params.ordemId), req.user);
+  sendSuccess(res, data, "PDF do contrato de recebimento gerado com sucesso.");
 });
 
 const confirmarRetiradaV2 = asyncHandler(async (req, res) => {
@@ -90,6 +102,8 @@ module.exports = {
   uploadFotosEntradaV2,
   finalizarCadastroFotosV2,
   registrarComunicacaoWhatsAppV2,
+  registrarAssinaturaRecebimentoV2,
+  generateAssinaturaRecebimentoPdfV2,
   confirmarRetiradaV2,
   createOrcamentoV2,
   updateOrcamentoStatusV2,

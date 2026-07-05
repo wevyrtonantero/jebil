@@ -145,7 +145,9 @@ function isAtendimentoPrioritario(ordem) {
 
 function isAguardandoAutorizacao(ordem) {
   const latestOrcamento = [...(ordem.orcamentos || [])].sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
-  const hasWaitingAuthorizationItem = (ordem.items || []).some((item) => item.status_item === "AGUARDANDO_AUTORIZACAO");
+  const hasWaitingAuthorizationItem = (ordem.items || []).some((item) =>
+    ["AGUARDANDO_AUTORIZACAO", "AGUARDANDO_ORCAMENTO"].includes(item.status_item),
+  );
   return hasWaitingAuthorizationItem && ["RASCUNHO", "PENDENTE_ENVIO", "ENVIADO", "PARCIAL"].includes(latestOrcamento?.status_orcamento || "RASCUNHO");
 }
 

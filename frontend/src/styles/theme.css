@@ -565,6 +565,7 @@
   position: sticky;
   top: 0;
   height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar.hidden {
@@ -618,6 +619,10 @@
 .nav-list {
   display: grid;
   gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
 }
 
 .nav-link {
@@ -2359,36 +2364,52 @@
   display: grid;
   gap: 12px;
   align-content: start;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .workshop-diagnostico-column {
-  background: rgba(255, 166, 77, 0.08);
+  background:
+    radial-gradient(circle at top left, rgba(255, 123, 74, 0.2), transparent 32%),
+    linear-gradient(180deg, rgba(63, 34, 36, 0.96), rgba(29, 31, 53, 0.96));
   border-radius: 28px;
-  border: 1px solid rgba(255, 166, 77, 0.14);
+  border: 1px solid rgba(255, 123, 74, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(255, 123, 74, 0.08);
 }
 
 .workshop-atendimento-column {
-  background: rgba(87, 201, 125, 0.08);
+  background:
+    radial-gradient(circle at top left, rgba(42, 231, 255, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(10, 45, 68, 0.96), rgba(13, 35, 60, 0.96));
   border-radius: 28px;
-  border: 1px solid rgba(87, 201, 125, 0.14);
+  border: 1px solid rgba(42, 231, 255, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(42, 231, 255, 0.08);
 }
 
 .workshop-pecas-column {
-  background: rgba(255, 196, 92, 0.08);
+  background:
+    radial-gradient(circle at top left, rgba(255, 209, 64, 0.2), transparent 34%),
+    linear-gradient(180deg, rgba(56, 43, 30, 0.96), rgba(33, 38, 58, 0.96));
   border-radius: 28px;
-  border: 1px solid rgba(255, 196, 92, 0.14);
+  border: 1px solid rgba(255, 209, 64, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 64, 0.08);
 }
 
 .workshop-autorizacao-column {
-  background: rgba(184, 144, 255, 0.08);
+  background:
+    radial-gradient(circle at top left, rgba(144, 104, 255, 0.22), transparent 34%),
+    linear-gradient(180deg, rgba(28, 34, 88, 0.96), rgba(24, 33, 75, 0.96));
   border-radius: 28px;
-  border: 1px solid rgba(184, 144, 255, 0.14);
+  border: 1px solid rgba(144, 104, 255, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(144, 104, 255, 0.08);
 }
 
 .workshop-execucao-column {
-  background: rgba(126, 183, 255, 0.08);
+  background:
+    radial-gradient(circle at top left, rgba(47, 140, 255, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(17, 52, 108, 0.96), rgba(16, 45, 92, 0.96));
   border-radius: 28px;
-  border: 1px solid rgba(126, 183, 255, 0.14);
+  border: 1px solid rgba(47, 140, 255, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(47, 140, 255, 0.08);
 }
 
 .workshop-prontas-column {
@@ -2398,28 +2419,28 @@
 }
 
 .workshop-diagnostico-column .office-queue-card {
-  background: rgba(255, 174, 96, 0.08);
-  border-color: rgba(255, 174, 96, 0.16);
+  background: linear-gradient(180deg, rgba(118, 58, 52, 0.62), rgba(60, 45, 63, 0.52));
+  border-color: rgba(255, 134, 88, 0.24);
 }
 
 .workshop-atendimento-column .office-queue-card {
-  background: rgba(87, 201, 125, 0.08);
-  border-color: rgba(87, 201, 125, 0.16);
+  background: linear-gradient(180deg, rgba(12, 74, 96, 0.62), rgba(19, 57, 79, 0.52));
+  border-color: rgba(75, 225, 255, 0.22);
 }
 
 .workshop-pecas-column .office-queue-card {
-  background: rgba(255, 196, 92, 0.08);
-  border-color: rgba(255, 196, 92, 0.16);
+  background: linear-gradient(180deg, rgba(88, 61, 34, 0.62), rgba(56, 49, 63, 0.52));
+  border-color: rgba(255, 211, 88, 0.24);
 }
 
 .workshop-autorizacao-column .office-queue-card {
-  background: rgba(184, 144, 255, 0.08);
-  border-color: rgba(184, 144, 255, 0.16);
+  background: linear-gradient(180deg, rgba(54, 48, 118, 0.66), rgba(40, 43, 92, 0.56));
+  border-color: rgba(154, 121, 255, 0.24);
 }
 
 .workshop-execucao-column .office-queue-card {
-  background: rgba(126, 183, 255, 0.08);
-  border-color: rgba(126, 183, 255, 0.16);
+  background: linear-gradient(180deg, rgba(25, 78, 142, 0.64), rgba(19, 58, 108, 0.54));
+  border-color: rgba(88, 160, 255, 0.22);
 }
 
 .office-ready-list {
@@ -2490,15 +2511,98 @@
 }
 
 .workshop-diagnostico-column .queue-order-badge {
-  background: rgba(255, 166, 77, 0.14);
-  border-color: rgba(255, 166, 77, 0.24);
-  color: #ffbe73;
+  background: rgba(255, 123, 74, 0.18);
+  border-color: rgba(255, 123, 74, 0.34);
+  color: #ffcfb0;
 }
 
 .workshop-atendimento-column .queue-order-badge {
-  background: rgba(87, 201, 125, 0.14);
-  border-color: rgba(87, 201, 125, 0.24);
-  color: #9ef0b1;
+  background: rgba(42, 231, 255, 0.18);
+  border-color: rgba(42, 231, 255, 0.3);
+  color: #c7faff;
+}
+
+.workshop-pecas-column .queue-order-badge {
+  background: rgba(255, 209, 64, 0.18);
+  border-color: rgba(255, 209, 64, 0.32);
+  color: #fff0b0;
+}
+
+.workshop-autorizacao-column .queue-order-badge {
+  background: rgba(144, 104, 255, 0.2);
+  border-color: rgba(144, 104, 255, 0.34);
+  color: #ddd0ff;
+}
+
+.workshop-execucao-column .queue-order-badge {
+  background: rgba(47, 140, 255, 0.2);
+  border-color: rgba(47, 140, 255, 0.32);
+  color: #d4e7ff;
+}
+
+.workshop-tv-page .summary-pill.strong {
+  background: rgba(255, 255, 255, 0.07);
+  color: #f8fbff;
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.workshop-diagnostico-column .summary-pill.strong {
+  background: rgba(255, 123, 74, 0.14);
+  border-color: rgba(255, 123, 74, 0.26);
+  color: #ffd8c7;
+}
+
+.workshop-atendimento-column .summary-pill.strong {
+  background: rgba(42, 231, 255, 0.14);
+  border-color: rgba(42, 231, 255, 0.24);
+  color: #d0fbff;
+}
+
+.workshop-pecas-column .summary-pill.strong {
+  background: rgba(255, 209, 64, 0.14);
+  border-color: rgba(255, 209, 64, 0.26);
+  color: #fff1bc;
+}
+
+.workshop-autorizacao-column .summary-pill.strong {
+  background: rgba(144, 104, 255, 0.16);
+  border-color: rgba(144, 104, 255, 0.28);
+  color: #e1d6ff;
+}
+
+.workshop-execucao-column .summary-pill.strong {
+  background: rgba(47, 140, 255, 0.16);
+  border-color: rgba(47, 140, 255, 0.28);
+  color: #d7e8ff;
+}
+
+.workshop-tv-page .empty-state {
+  background: rgba(8, 20, 46, 0.28);
+}
+
+.workshop-diagnostico-column .empty-state {
+  border-color: rgba(255, 123, 74, 0.22);
+  color: #ffbfa6;
+}
+
+.workshop-atendimento-column .empty-state {
+  border-color: rgba(42, 231, 255, 0.2);
+  color: #9eefff;
+}
+
+.workshop-pecas-column .empty-state {
+  border-color: rgba(255, 209, 64, 0.22);
+  color: #ffe08a;
+}
+
+.workshop-autorizacao-column .empty-state {
+  border-color: rgba(144, 104, 255, 0.24);
+  color: #c7b3ff;
+}
+
+.workshop-execucao-column .empty-state {
+  border-color: rgba(47, 140, 255, 0.22);
+  color: #a8d0ff;
 }
 
 .office-queue-head,
@@ -3327,11 +3431,87 @@
   gap: 22px;
 }
 
+.prontuario-orders-shell {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.prontuario-order-list {
+  display: grid;
+  gap: 14px;
+}
+
+.prontuario-order-card,
+.prontuario-order-detail {
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.prontuario-order-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.prontuario-order-card.is-active {
+  border-color: rgba(255, 174, 69, 0.42);
+  box-shadow: 0 0 0 1px rgba(255, 174, 69, 0.18) inset;
+  background: linear-gradient(180deg, rgba(255, 170, 70, 0.08), rgba(255, 255, 255, 0.03));
+}
+
+.prontuario-order-card-head {
+  display: grid;
+  gap: 12px;
+}
+
+.prontuario-order-card-head h2 {
+  margin: 0 0 6px;
+  font-size: 1.2rem;
+}
+
+.prontuario-order-card-head p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.prontuario-order-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.prontuario-order-card-grid span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.prontuario-order-card-grid strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.prontuario-order-card-actions,
+.prontuario-order-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.prontuario-order-detail {
+  padding: 22px;
+}
+
 .prontuario-report-entry {
   display: grid;
   gap: 18px;
   padding-top: 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .prontuario-report-entry.is-highlighted {
@@ -3422,6 +3602,81 @@
 }
 
 .prontuario-report-table td small {
+  margin-top: 4px;
+  color: var(--text-soft);
+}
+
+.prontuario-receipt-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.prontuario-receipt-copy,
+.prontuario-receipt-signature {
+  display: grid;
+  gap: 10px;
+}
+
+.prontuario-receipt-copy pre {
+  margin: 0;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+  white-space: pre-wrap;
+  font: inherit;
+  line-height: 1.55;
+}
+
+.prontuario-receipt-signature img {
+  width: 100%;
+  min-height: 160px;
+  object-fit: contain;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 16, 40, 0.96);
+}
+
+.prontuario-receipt-pdf {
+  width: fit-content;
+  text-decoration: none;
+}
+
+.prontuario-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.prontuario-photo-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-decoration: none;
+}
+
+.prontuario-photo-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 16, 40, 0.96);
+}
+
+.prontuario-photo-card strong,
+.prontuario-photo-card small {
+  display: block;
+}
+
+.prontuario-photo-card small {
   margin-top: 4px;
   color: var(--text-soft);
 }
@@ -3914,6 +4169,195 @@
   line-height: 1.45;
 }
 
+.foto-flow-signature-shell {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.foto-flow-contract {
+  display: grid;
+  gap: 18px;
+}
+
+.foto-flow-contract-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: start;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.foto-flow-contract-header h3 {
+  margin: 6px 0 8px;
+  font-size: 1.35rem;
+}
+
+.foto-flow-contract-header p {
+  margin: 0;
+  color: var(--text-soft);
+  max-width: 620px;
+  line-height: 1.5;
+}
+
+.foto-flow-contract-stamp {
+  min-width: 180px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 183, 84, 0.18);
+  background: linear-gradient(180deg, rgba(255, 171, 66, 0.14), rgba(255, 171, 66, 0.05));
+  text-align: right;
+}
+
+.foto-flow-contract-stamp span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.foto-flow-contract-stamp strong {
+  display: block;
+  color: #ffd594;
+  font-size: 1rem;
+}
+
+.foto-flow-contract-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.foto-flow-contract-meta-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.foto-flow-contract-meta-card span {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.foto-flow-contract-meta-card strong {
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.foto-flow-contract-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 18px;
+}
+
+.foto-flow-contract-clause {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.foto-flow-contract-clause span {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.foto-flow-contract-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+  line-height: 1.6;
+}
+
+.foto-flow-contract-checks {
+  display: grid;
+  gap: 12px;
+}
+
+.foto-flow-signature-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.foto-flow-contract-signature {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.foto-flow-signature-panel.is-side {
+  align-content: start;
+}
+
+.foto-flow-section-label {
+  font-size: 0.95rem;
+}
+
+.foto-flow-checkbox {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.foto-flow-checkbox.is-contract {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.foto-flow-checkbox input {
+  margin-top: 4px;
+}
+
+.signature-pad {
+  width: 100%;
+  height: 220px;
+  display: block;
+  border-radius: 18px;
+  border: 1px dashed rgba(17, 17, 17, 0.18);
+  background: #ffffff;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.signature-pad.is-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.foto-flow-signature-copy {
+  margin: -4px 0 0;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.foto-flow-signature-actions {
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.foto-flow-signature-status {
+  margin-top: 2px;
+}
+
 .modal-section-title {
   margin: 0;
 }
@@ -4252,6 +4696,22 @@
     grid-template-columns: 1fr;
   }
 
+  .foto-flow-contract-meta,
+  .foto-flow-contract-body,
+  .foto-flow-contract-signature,
+  .prontuario-receipt-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .foto-flow-contract-header {
+    grid-template-columns: 1fr;
+  }
+
+  .foto-flow-contract-stamp {
+    min-width: 0;
+    text-align: left;
+  }
+
   .foto-flow-modal-action {
     grid-template-columns: 52px minmax(0, 1fr);
   }
@@ -4305,9 +4765,11 @@
   }
 
   .prontuario-search-bar,
+  .prontuario-orders-shell,
   .prontuario-document-header,
   .prontuario-report-head,
-  .prontuario-report-grid {
+  .prontuario-report-grid,
+  .prontuario-order-card-grid {
     grid-template-columns: 1fr;
   }
 
@@ -4320,6 +4782,10 @@
     justify-items: start;
     justify-content: flex-start;
     text-align: left;
+  }
+
+  .prontuario-order-detail {
+    padding: 18px;
   }
 
   .operacao-service-card {

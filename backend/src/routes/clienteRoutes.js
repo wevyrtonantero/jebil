@@ -9,11 +9,12 @@ const {
 } = require("../controllers/clienteController");
 const { authMiddleware } = require("../middlewares/authMiddleware");
 const { roleMiddleware } = require("../middlewares/roleMiddleware");
+const { perfisAplicacao } = require("../utils/roles");
 
 const router = Router();
 
 router.use(authMiddleware);
-router.use(roleMiddleware(["ADMIN", "RECEPCAO"]));
+router.use(roleMiddleware(perfisAplicacao));
 
 router.get("/", listClientes);
 router.get("/:id", getCliente);

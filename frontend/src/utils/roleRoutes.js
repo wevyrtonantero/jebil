@@ -1,13 +1,17 @@
+import { normalizeRole } from "./roles";
+
 function getDefaultRouteByRole(perfil) {
-  if (perfil === "ORCAMENTISTA") {
+  const normalizedRole = normalizeRole(perfil);
+
+  if (normalizedRole === "SUPERVISAO") {
     return "/v2/orcamentos";
   }
 
-  if (perfil === "OFICINA") {
+  if (normalizedRole === "OFICINA") {
     return "/oficina";
   }
 
-  if (perfil === "RECEPCAO") {
+  if (normalizedRole === "RECEPCAO") {
     return "/recepcao";
   }
 

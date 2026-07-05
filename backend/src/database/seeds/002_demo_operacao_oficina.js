@@ -32,7 +32,7 @@ const motosDemo = [
 ];
 
 exports.seed = async function seed(knex) {
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@jebil.local";
+  const adminEmail = process.env.SEED_DIRETORIA_EMAIL || process.env.SEED_ADMIN_EMAIL || "diretoria@jebil.local";
   const admin = await knex("usuarios").where({ email: adminEmail }).first();
 
   if (!admin) {

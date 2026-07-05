@@ -9,16 +9,18 @@ const {
 } = require("../controllers/motocicletaController");
 const { authMiddleware } = require("../middlewares/authMiddleware");
 const { roleMiddleware } = require("../middlewares/roleMiddleware");
+const { perfisAplicacao } = require("../utils/roles");
 
 const router = Router();
 
 router.use(authMiddleware);
+router.use(roleMiddleware(perfisAplicacao));
 
-router.get("/", roleMiddleware(["ADMIN", "RECEPCAO"]), listMotocicletas);
-router.get("/:id", roleMiddleware(["ADMIN", "RECEPCAO"]), getMotocicleta);
-router.post("/", roleMiddleware(["ADMIN", "RECEPCAO"]), createMotocicleta);
-router.put("/:id", roleMiddleware(["ADMIN", "RECEPCAO"]), updateMotocicleta);
-router.patch("/:id/status", roleMiddleware(["ADMIN", "RECEPCAO"]), updateMotocicletaStatus);
-router.patch("/:id/reativar", roleMiddleware(["ADMIN", "RECEPCAO"]), reactivateMotocicleta);
+router.get("/", listMotocicletas);
+router.get("/:id", getMotocicleta);
+router.post("/", createMotocicleta);
+router.put("/:id", updateMotocicleta);
+router.patch("/:id/status", updateMotocicletaStatus);
+router.patch("/:id/reativar", reactivateMotocicleta);
 
 module.exports = router;

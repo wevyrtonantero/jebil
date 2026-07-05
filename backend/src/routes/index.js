@@ -11,6 +11,7 @@ const relatorioRoutes = require("./relatorioRoutes");
 const { listMotocicletasByCliente } = require("../controllers/motocicletaController");
 const { authMiddleware } = require("../middlewares/authMiddleware");
 const { roleMiddleware } = require("../middlewares/roleMiddleware");
+const { perfisAplicacao } = require("../utils/roles");
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.use("/auth", authRoutes);
 router.get(
   "/clientes/:clienteId/motocicletas",
   authMiddleware,
-  roleMiddleware(["ADMIN", "RECEPCAO"]),
+  roleMiddleware(perfisAplicacao),
   listMotocicletasByCliente,
 );
 router.use("/clientes", clienteRoutes);

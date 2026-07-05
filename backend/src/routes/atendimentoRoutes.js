@@ -18,25 +18,27 @@ const {
 } = require("../controllers/atendimentoController");
 const { authMiddleware } = require("../middlewares/authMiddleware");
 const { roleMiddleware } = require("../middlewares/roleMiddleware");
+const { perfisAplicacao } = require("../utils/roles");
 
 const router = Router();
 
 router.use(authMiddleware);
+router.use(roleMiddleware(perfisAplicacao));
 
-router.get("/", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA"]), listAtendimentos);
-router.get("/fila", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA"]), listFila);
-router.get("/:id/historico", roleMiddleware(["ADMIN", "RECEPCAO"]), getHistorico);
-router.get("/:id", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA"]), getAtendimento);
-router.post("/", roleMiddleware(["ADMIN", "RECEPCAO"]), createAtendimento);
-router.patch("/:id/assumir", roleMiddleware(["ADMIN", "OFICINA"]), assumirAtendimento);
-router.patch("/:id/status", roleMiddleware(["ADMIN", "OFICINA"]), alterarStatus);
-router.patch("/:id/retornar-fila", roleMiddleware(["ADMIN", "OFICINA"]), retornarFila);
-router.patch("/:id/concluir-servico", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA"]), concluirServico);
-router.patch("/:id/confirmar-pagamento", roleMiddleware(["ADMIN", "RECEPCAO"]), confirmarPagamento);
-router.patch("/:id/pagamento", roleMiddleware(["ADMIN", "RECEPCAO"]), updatePagamento);
-router.patch("/:id/recepcao", roleMiddleware(["ADMIN", "RECEPCAO"]), updateAtendimentoRecepcao);
-router.patch("/:id/liberar-retirada", roleMiddleware(["ADMIN", "RECEPCAO", "OFICINA"]), liberarRetirada);
-router.patch("/:id/confirmar-retirada", roleMiddleware(["ADMIN", "RECEPCAO"]), confirmarRetirada);
-router.patch("/:id/cancelar", roleMiddleware(["ADMIN", "RECEPCAO"]), cancelarAtendimento);
+router.get("/", listAtendimentos);
+router.get("/fila", listFila);
+router.get("/:id/historico", getHistorico);
+router.get("/:id", getAtendimento);
+router.post("/", createAtendimento);
+router.patch("/:id/assumir", assumirAtendimento);
+router.patch("/:id/status", alterarStatus);
+router.patch("/:id/retornar-fila", retornarFila);
+router.patch("/:id/concluir-servico", concluirServico);
+router.patch("/:id/confirmar-pagamento", confirmarPagamento);
+router.patch("/:id/pagamento", updatePagamento);
+router.patch("/:id/recepcao", updateAtendimentoRecepcao);
+router.patch("/:id/liberar-retirada", liberarRetirada);
+router.patch("/:id/confirmar-retirada", confirmarRetirada);
+router.patch("/:id/cancelar", cancelarAtendimento);
 
 module.exports = router;

@@ -8,6 +8,7 @@ const atendimentoRepository = require("../src/repositories/atendimentoRepository
 const ordemServicoV2Service = require("../src/services/v2/ordemServicoV2Service");
 const bcrypt = require("bcryptjs");
 const { signAccessToken } = require("../src/config/jwt");
+const { ApiError } = require("../src/utils/ApiError");
 
 const originalUsuarioRepository = {
   findByEmail: usuarioRepository.findByEmail,
@@ -30,6 +31,8 @@ const originalOrdemServicoV2Service = {
   getOrdemServicoById: ordemServicoV2Service.getOrdemServicoById,
   createOrdemServicoDraft: ordemServicoV2Service.createOrdemServicoDraft,
   addFotosEntrada: ordemServicoV2Service.addFotosEntrada,
+  registrarAssinaturaRecebimento: ordemServicoV2Service.registrarAssinaturaRecebimento,
+  generateAssinaturaRecebimentoPdf: ordemServicoV2Service.generateAssinaturaRecebimentoPdf,
   registrarComunicacaoWhatsApp: ordemServicoV2Service.registrarComunicacaoWhatsApp,
   createOrcamento: ordemServicoV2Service.createOrcamento,
   updateOrcamentoStatus: ordemServicoV2Service.updateOrcamentoStatus,
@@ -59,6 +62,8 @@ test.afterEach(() => {
   ordemServicoV2Service.getOrdemServicoById = originalOrdemServicoV2Service.getOrdemServicoById;
   ordemServicoV2Service.createOrdemServicoDraft = originalOrdemServicoV2Service.createOrdemServicoDraft;
   ordemServicoV2Service.addFotosEntrada = originalOrdemServicoV2Service.addFotosEntrada;
+  ordemServicoV2Service.registrarAssinaturaRecebimento = originalOrdemServicoV2Service.registrarAssinaturaRecebimento;
+  ordemServicoV2Service.generateAssinaturaRecebimentoPdf = originalOrdemServicoV2Service.generateAssinaturaRecebimentoPdf;
   ordemServicoV2Service.registrarComunicacaoWhatsApp = originalOrdemServicoV2Service.registrarComunicacaoWhatsApp;
   ordemServicoV2Service.createOrcamento = originalOrdemServicoV2Service.createOrcamento;
   ordemServicoV2Service.updateOrcamentoStatus = originalOrdemServicoV2Service.updateOrcamentoStatus;
@@ -114,7 +119,7 @@ test("POST /api/auth/login returns token on valid credentials", async () => {
   assert.equal(typeof response.body.data.accessToken, "string");
 });
 
-test("GET /api/clientes denies OFICINA profile", async () => {
+test("GET /api/clientes allows OFICINA profile", async () => {
   const token = signAccessToken({
     sub: 7,
     perfil: "OFICINA",
@@ -129,11 +134,17 @@ test("GET /api/clientes denies OFICINA profile", async () => {
     ativo: true,
   });
 
+  clienteRepository.list = async () => ({
+    rows: [],
+    total: 0,
+  });
+
   const response = await request(app)
     .get("/api/clientes")
     .set("Authorization", `Bearer ${token}`);
 
-  assert.equal(response.statusCode, 403);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.success, true);
 });
 
 test("GET /api/clientes returns paginated payload for recepcao", async () => {
@@ -223,18 +234,18 @@ test("GET /api/relatorios/atendimentos denies OFICINA profile", async () => {
   assert.equal(response.statusCode, 403);
 });
 
-test("GET /api/v2/ordens-servico allows ORCAMENTISTA profile", async () => {
+test("GET /api/v2/ordens-servico allows SUPERVISAO profile", async () => {
   const token = signAccessToken({
     sub: 10,
-    perfil: "ORCAMENTISTA",
-    email: "orcamentista@jebil.local",
+    perfil: "SUPERVISAO",
+    email: "supervisao@jebil.local",
   });
 
   usuarioRepository.findById = async () => ({
     id: 10,
-    nome: "Orcamentista",
-    email: "orcamentista@jebil.local",
-    perfil: "ORCAMENTISTA",
+    nome: "Supervisao",
+    email: "supervisao@jebil.local",
+    perfil: "SUPERVISAO",
     ativo: true,
   });
 
@@ -248,7 +259,7 @@ test("GET /api/v2/ordens-servico allows ORCAMENTISTA profile", async () => {
   assert.equal(response.body.success, true);
 });
 
-test("POST /api/v2/ordens-servico denies OFICINA profile", async () => {
+test("POST /api/v2/ordens-servico allows OFICINA profile", async () => {
   const token = signAccessToken({
     sub: 11,
     perfil: "OFICINA",
@@ -263,6 +274,24 @@ test("POST /api/v2/ordens-servico denies OFICINA profile", async () => {
     ativo: true,
   });
 
+  ordemServicoV2Service.createOrdemServicoDraft = async (payload, currentUser) => ({
+    ordemServico: {
+      id: 11,
+      numero_os: "OS-2026-000811",
+      status_geral: "EM_DIAGNOSTICO",
+      cliente_id: payload.clienteId,
+      motocicleta_id: payload.motocicletaId,
+      criado_por: currentUser.id,
+    },
+    items: [
+      {
+        id: 110,
+        descricao: payload.items[0].descricao,
+        status_item: "AGUARDANDO_DIAGNOSTICO",
+      },
+    ],
+  });
+
   const response = await request(app)
     .post("/api/v2/ordens-servico")
     .set("Authorization", `Bearer ${token}`)
@@ -273,7 +302,8 @@ test("POST /api/v2/ordens-servico denies OFICINA profile", async () => {
       items: [{ descricao: "Diagnostico da falha", exige_diagnostico: true }],
     });
 
-  assert.equal(response.statusCode, 403);
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.success, true);
 });
 
 test("POST /api/v2/ordens-servico accepts RECEPCAO payload and returns created order", async () => {
@@ -331,18 +361,18 @@ test("POST /api/v2/ordens-servico accepts RECEPCAO payload and returns created o
   assert.equal(response.body.data.ordemServico.numero_os, "OS-2026-000777");
 });
 
-test("POST /api/v2/ordens-servico/:ordemId/comunicacoes-whatsapp allows ORCAMENTISTA", async () => {
+test("POST /api/v2/ordens-servico/:ordemId/comunicacoes-whatsapp allows SUPERVISAO", async () => {
   const token = signAccessToken({
     sub: 121,
-    perfil: "ORCAMENTISTA",
-    email: "orcamentista@jebil.local",
+    perfil: "SUPERVISAO",
+    email: "supervisao@jebil.local",
   });
 
   usuarioRepository.findById = async () => ({
     id: 121,
-    nome: "Orcamentista",
-    email: "orcamentista@jebil.local",
-    perfil: "ORCAMENTISTA",
+    nome: "Supervisao",
+    email: "supervisao@jebil.local",
+    perfil: "SUPERVISAO",
     ativo: true,
   });
 
@@ -367,18 +397,119 @@ test("POST /api/v2/ordens-servico/:ordemId/comunicacoes-whatsapp allows ORCAMENT
   assert.equal(response.body.success, true);
 });
 
-test("POST /api/v2/ordens-servico/:ordemId/orcamentos allows ORCAMENTISTA", async () => {
+test("POST /api/v2/ordens-servico/:ordemId/assinatura-recebimento allows RECEPCAO", async () => {
+  const token = signAccessToken({
+    sub: 221,
+    perfil: "RECEPCAO",
+    email: "recepcao@jebil.local",
+  });
+
+  usuarioRepository.findById = async () => ({
+    id: 221,
+    nome: "Recepcao",
+    email: "recepcao@jebil.local",
+    perfil: "RECEPCAO",
+    ativo: true,
+  });
+
+  ordemServicoV2Service.registrarAssinaturaRecebimento = async () => ({
+    id: 9,
+    numero_os: "OS-2026-000950",
+    assinatura_recebimento: {
+      id: 1,
+      numero_os: "OS-2026-000950",
+    },
+  });
+
+  const response = await request(app)
+    .post("/api/v2/ordens-servico/9/assinatura-recebimento")
+    .set("Authorization", `Bearer ${token}`)
+    .send({
+      assinatura_data_url: "data:image/png;base64,ZmFrZQ==",
+      recebeu_fotos_whatsapp: true,
+      ciente_possivel_cobranca: true,
+    });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.success, true);
+});
+
+test("POST /api/v2/ordens-servico/:ordemId/assinatura-recebimento blocks overwrite when signature already exists", async () => {
+  const token = signAccessToken({
+    sub: 222,
+    perfil: "RECEPCAO",
+    email: "recepcao@jebil.local",
+  });
+
+  usuarioRepository.findById = async () => ({
+    id: 222,
+    nome: "Recepcao",
+    email: "recepcao@jebil.local",
+    perfil: "RECEPCAO",
+    ativo: true,
+  });
+
+  ordemServicoV2Service.registrarAssinaturaRecebimento = async () => {
+    throw new ApiError(409, "Esta OS ja possui uma assinatura registrada e nao pode ser alterada.");
+  };
+
+  const response = await request(app)
+    .post("/api/v2/ordens-servico/9/assinatura-recebimento")
+    .set("Authorization", `Bearer ${token}`)
+    .send({
+      assinatura_data_url: "data:image/png;base64,ZmFrZQ==",
+      recebeu_fotos_whatsapp: true,
+      ciente_possivel_cobranca: true,
+    });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.success, false);
+});
+
+test("POST /api/v2/ordens-servico/:ordemId/assinatura-recebimento/pdf allows RECEPCAO", async () => {
+  const token = signAccessToken({
+    sub: 223,
+    perfil: "RECEPCAO",
+    email: "recepcao@jebil.local",
+  });
+
+  usuarioRepository.findById = async () => ({
+    id: 223,
+    nome: "Recepcao",
+    email: "recepcao@jebil.local",
+    perfil: "RECEPCAO",
+    ativo: true,
+  });
+
+  ordemServicoV2Service.generateAssinaturaRecebimentoPdf = async () => ({
+    id: 9,
+    numero_os: "OS-2026-000950",
+    assinatura_recebimento: {
+      id: 1,
+      pdf_url: "/uploads/assinaturas-pdf/contrato.pdf",
+    },
+  });
+
+  const response = await request(app)
+    .post("/api/v2/ordens-servico/9/assinatura-recebimento/pdf")
+    .set("Authorization", `Bearer ${token}`);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.success, true);
+});
+
+test("POST /api/v2/ordens-servico/:ordemId/orcamentos allows SUPERVISAO", async () => {
   const token = signAccessToken({
     sub: 122,
-    perfil: "ORCAMENTISTA",
-    email: "orcamentista@jebil.local",
+    perfil: "SUPERVISAO",
+    email: "supervisao@jebil.local",
   });
 
   usuarioRepository.findById = async () => ({
     id: 122,
-    nome: "Orcamentista",
-    email: "orcamentista@jebil.local",
-    perfil: "ORCAMENTISTA",
+    nome: "Supervisao",
+    email: "supervisao@jebil.local",
+    perfil: "SUPERVISAO",
     ativo: true,
   });
 
@@ -409,18 +540,18 @@ test("POST /api/v2/ordens-servico/:ordemId/orcamentos allows ORCAMENTISTA", asyn
   assert.equal(response.body.success, true);
 });
 
-test("PATCH /api/v2/ordens-servico/orcamentos/:id/status allows ORCAMENTISTA", async () => {
+test("PATCH /api/v2/ordens-servico/orcamentos/:id/status allows SUPERVISAO", async () => {
   const token = signAccessToken({
     sub: 123,
-    perfil: "ORCAMENTISTA",
-    email: "orcamentista@jebil.local",
+    perfil: "SUPERVISAO",
+    email: "supervisao@jebil.local",
   });
 
   usuarioRepository.findById = async () => ({
     id: 123,
-    nome: "Orcamentista",
-    email: "orcamentista@jebil.local",
-    perfil: "ORCAMENTISTA",
+    nome: "Supervisao",
+    email: "supervisao@jebil.local",
+    perfil: "SUPERVISAO",
     ativo: true,
   });
 
@@ -440,18 +571,18 @@ test("PATCH /api/v2/ordens-servico/orcamentos/:id/status allows ORCAMENTISTA", a
   assert.equal(response.body.success, true);
 });
 
-test("POST /api/v2/ordens-servico/orcamentos/:id/pdf allows ORCAMENTISTA", async () => {
+test("POST /api/v2/ordens-servico/orcamentos/:id/pdf allows SUPERVISAO", async () => {
   const token = signAccessToken({
     sub: 223,
-    perfil: "ORCAMENTISTA",
-    email: "orcamentista@jebil.local",
+    perfil: "SUPERVISAO",
+    email: "supervisao@jebil.local",
   });
 
   usuarioRepository.findById = async () => ({
     id: 223,
-    nome: "Orcamentista",
-    email: "orcamentista@jebil.local",
-    perfil: "ORCAMENTISTA",
+    nome: "Supervisao",
+    email: "supervisao@jebil.local",
+    perfil: "SUPERVISAO",
     ativo: true,
   });
 
@@ -600,18 +731,18 @@ test("PATCH /api/v2/ordens-servico/:ordemId/items/:itemId/status allows OFICINA"
   assert.equal(response.body.success, true);
 });
 
-test("PATCH /api/v2/ordens-servico/:ordemId/items/:itemId/autorizacao allows ORCAMENTISTA", async () => {
+test("PATCH /api/v2/ordens-servico/:ordemId/items/:itemId/autorizacao allows SUPERVISAO", async () => {
   const token = signAccessToken({
     sub: 14,
-    perfil: "ORCAMENTISTA",
-    email: "orcamentista@jebil.local",
+    perfil: "SUPERVISAO",
+    email: "supervisao@jebil.local",
   });
 
   usuarioRepository.findById = async () => ({
     id: 14,
-    nome: "Orcamentista",
-    email: "orcamentista@jebil.local",
-    perfil: "ORCAMENTISTA",
+    nome: "Supervisao",
+    email: "supervisao@jebil.local",
+    perfil: "SUPERVISAO",
     ativo: true,
   });
 
@@ -630,7 +761,7 @@ test("PATCH /api/v2/ordens-servico/:ordemId/items/:itemId/autorizacao allows ORC
   assert.equal(response.body.success, true);
 });
 
-test("PATCH /api/v2/ordens-servico/:ordemId/items/:itemId/pagamento denies OFICINA", async () => {
+test("PATCH /api/v2/ordens-servico/:ordemId/items/:itemId/pagamento allows OFICINA", async () => {
   const token = signAccessToken({
     sub: 15,
     perfil: "OFICINA",
@@ -645,12 +776,19 @@ test("PATCH /api/v2/ordens-servico/:ordemId/items/:itemId/pagamento denies OFICI
     ativo: true,
   });
 
+  ordemServicoV2Service.updateItemPagamento = async () => ({
+    id: 9,
+    numero_os: "OS-2026-000915",
+    items: [{ id: 92, pagamento_status: "PAGO" }],
+  });
+
   const response = await request(app)
     .patch("/api/v2/ordens-servico/9/items/92/pagamento")
     .set("Authorization", `Bearer ${token}`)
     .send({ pagamento_status: "PAGO" });
 
-  assert.equal(response.statusCode, 403);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.success, true);
 });
 
 test("POST /api/v2/ordens-servico/:ordemId/diagnosticos allows OFICINA", async () => {

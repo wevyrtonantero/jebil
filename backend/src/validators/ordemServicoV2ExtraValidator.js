@@ -55,6 +55,38 @@ function validateRegistrarComunicacaoWhatsAppPayload(payload) {
   };
 }
 
+function validateRegistrarAssinaturaRecebimentoPayload(payload) {
+  const assinaturaDataUrl = String(payload.assinatura_data_url || "").trim();
+  const recebeuFotosWhatsapp = Boolean(payload.recebeu_fotos_whatsapp);
+  const cientePossivelCobranca = Boolean(payload.ciente_possivel_cobranca);
+
+  if (!assinaturaDataUrl) {
+    throw new ApiError(400, "assinatura_data_url e obrigatoria.");
+  }
+
+  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(assinaturaDataUrl)) {
+    throw new ApiError(400, "assinatura_data_url invalida.");
+  }
+
+  if (assinaturaDataUrl.length > 2_500_000) {
+    throw new ApiError(400, "assinatura_data_url excede o tamanho permitido.");
+  }
+
+  if (!recebeuFotosWhatsapp) {
+    throw new ApiError(400, "Confirme que o cliente recebeu as fotos no WhatsApp.");
+  }
+
+  if (!cientePossivelCobranca) {
+    throw new ApiError(400, "Confirme que o cliente esta ciente da possivel cobranca.");
+  }
+
+  return {
+    assinaturaDataUrl,
+    recebeuFotosWhatsapp,
+    cientePossivelCobranca,
+  };
+}
+
 function validateCreateOrcamentoPayload(payload) {
   const numeroExterno = String(payload.numero_externo || "").trim();
   const statusOrcamento = String(payload.status_orcamento || "RASCUNHO").trim().toUpperCase();
@@ -184,6 +216,7 @@ function validateAtribuirExecucaoPayload(payload) {
 
 module.exports = {
   validateRegistrarComunicacaoWhatsAppPayload,
+  validateRegistrarAssinaturaRecebimentoPayload,
   validateCreateOrcamentoPayload,
   validateUpdateOrcamentoStatusPayload,
   validateRegistrarPrevisaoPecaPayload,

@@ -3,13 +3,19 @@ import { useSearchParams } from "react-router-dom";
 import AppIcon from "../components/common/AppIcon";
 import { listClientes } from "../services/clienteService";
 import { listMotocicletas, listMotocicletasByCliente } from "../services/motocicletaService";
-import { getOrdemServicoV2, getProntuarioMotocicletaV2, listOrdensServicoV2 } from "../services/ordemServicoV2Service";
+import {
+  generateAssinaturaRecebimentoPdfV2,
+  getOrdemServicoV2,
+  getProntuarioMotocicletaV2,
+  listOrdensServicoV2,
+} from "../services/ordemServicoV2Service";
 import { formatCpf, formatPhone, formatPlate } from "../utils/formatters";
 
 const SEARCH_OPTIONS = [
   { id: "placa", label: "Placa" },
   { id: "cpf", label: "CPF" },
   { id: "nome", label: "Nome" },
+  { id: "os", label: "Numero da OS" },
   { id: "externo", label: "Numero externo" },
 ];
 
@@ -30,6 +36,13 @@ function normalizeExternalNumber(value = "") {
   return normalized ? `#${normalized}` : "";
 }
 
+function normalizeOsNumber(value = "") {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "")
+    .trim();
+}
+
 function getSearchPlaceholder(mode) {
   if (mode === "cpf") {
     return "000.000.000-00";
@@ -37,6 +50,10 @@ function getSearchPlaceholder(mode) {
 
   if (mode === "nome") {
     return "Digite o nome do cliente";
+  }
+
+  if (mode === "os") {
+    return "OS-2026-000075";
   }
 
   if (mode === "externo") {
@@ -55,11 +72,32 @@ function formatSearchValue(mode, value) {
     return formatCpf(value);
   }
 
+  if (mode === "os") {
+    return normalizeOsNumber(value);
+  }
+
   if (mode === "externo") {
     return normalizeExternalNumber(value);
   }
 
   return value;
+}
+
+function getApiOrigin() {
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3333/api";
+  return apiUrl.replace(/\/api\/?$/, "");
+}
+
+function getPublicAssetUrl(path = "") {
+  if (!path) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  return `${getApiOrigin()}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 function extractDateParts(value) {
@@ -105,16 +143,6 @@ function formatReportDate(value) {
   return `${parts.day}/${parts.month}/${parts.year}`;
 }
 
-function formatReportTime(value) {
-  const parts = extractDateParts(value);
-
-  if (!parts) {
-    return "--:--";
-  }
-
-  return `${parts.hour}:${parts.minute}`;
-}
-
 function formatReportDateTime(value) {
   const parts = extractDateParts(value);
 
@@ -152,6 +180,37 @@ function formatWarrantyCountdown(endValue, nowTs) {
   return isExpired ? `Expirada ha ${label}` : `${label} restantes`;
 }
 
+function isWarrantyExpired(endValue, nowTs) {
+  const endDate = endValue instanceof Date ? endValue : new Date(endValue);
+
+  if (Number.isNaN(endDate.getTime())) {
+    return false;
+  }
+
+  return endDate.getTime() < nowTs;
+}
+
+function formatDaysSinceLabel(value, nowTs) {
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Data indisponivel";
+  }
+
+  const diffMs = Math.max(0, nowTs - date.getTime());
+  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+
+  if (days === 0) {
+    return "Hoje";
+  }
+
+  if (days === 1) {
+    return "Ha 1 dia";
+  }
+
+  return `Ha ${days} dias`;
+}
+
 function toMoney(value) {
   const amount = Number(value || 0);
   return amount.toLocaleString("pt-BR", {
@@ -172,6 +231,25 @@ function getLatestOrcamento(ordem) {
 
 function getLatestDiagnostico(ordem) {
   return [...(ordem.diagnosticos || [])].sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
+}
+
+function getReceiptRecord(ordem) {
+  return ordem?.assinatura_recebimento || null;
+}
+
+function getLatestServiceDate(services = [], ordem = {}) {
+  const dates = services
+    .map((service) => service.dataServico)
+    .filter(Boolean)
+    .map((value) => new Date(value))
+    .filter((date) => !Number.isNaN(date.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime());
+
+  if (dates.length) {
+    return dates[0].toISOString();
+  }
+
+  return ordem.pronta_retirada_em || ordem.finalizada_em || ordem.atualizado_em || ordem.aberta_em || null;
 }
 
 function getExecutionLabel(execucao) {
@@ -235,9 +313,7 @@ function buildProntuarioEntries(ordensServico = [], highlightOrderId = null) {
           executadoPor: getExecutionLabel(execucao),
           observacao: execucao?.descricao_execucao || item.observacoes || "",
           dataServico: item.concluido_em || item.iniciado_em || item.atualizado_em || ordem.atualizado_em,
-          garantiaInicio: garantia?.inicio_garantia_em || item.concluido_em || item.iniciado_em || item.atualizado_em || ordem.atualizado_em,
           garantiaFim: garantia?.fim_garantia_em || fallbackWarrantyEnd,
-          garantiaStatus: garantia?.status_garantia || "ATIVA",
         };
       });
 
@@ -253,6 +329,16 @@ function buildProntuarioEntries(ordensServico = [], highlightOrderId = null) {
       numeroExterno: latestOrcamento?.numero_externo || "",
       valorOrcamento: latestOrcamento?.valor_total || 0,
       orcamentoItems: latestOrcamento?.items || [],
+      assinaturaRecebimento: getReceiptRecord(ordem),
+      assinaturaRecebimentoPdfUrl: getPublicAssetUrl(getReceiptRecord(ordem)?.pdf_url),
+      fotosEntrada: (ordem.fotos_entrada || []).map((foto) => ({
+        id: foto.id,
+        nomeArquivo: foto.nome_arquivo,
+        criadoEm: foto.criado_em,
+        url: getPublicAssetUrl(foto.arquivo_url),
+      })),
+      dataServico: getLatestServiceDate(services, ordem),
+      garantiaFimOs: addDaysToDate(getLatestServiceDate(services, ordem), 90),
       services,
       highlighted: Number(ordem.id) === Number(highlightOrderId),
     };
@@ -294,6 +380,9 @@ function ProntuarioV2Page() {
   const [searchResults, setSearchResults] = useState([]);
   const [selectedContext, setSelectedContext] = useState(null);
   const [highlightOrderId, setHighlightOrderId] = useState(null);
+  const [activeEntryId, setActiveEntryId] = useState(null);
+  const [photosVisibleForEntryId, setPhotosVisibleForEntryId] = useState(null);
+  const [actionBusyOrderId, setActionBusyOrderId] = useState(null);
   const [autoSearchPlate, setAutoSearchPlate] = useState("");
   const [clockNow, setClockNow] = useState(() => Date.now());
 
@@ -301,8 +390,13 @@ function ProntuarioV2Page() {
     () => buildProntuarioEntries(prontuario?.ordens_servico || [], highlightOrderId),
     [highlightOrderId, prontuario],
   );
-  const headerExternalNumber =
-    selectedContext?.numero_externo || reportEntries.find((entry) => entry.highlighted)?.numeroExterno || reportEntries[0]?.numeroExterno || "-";
+
+  const activeEntry = useMemo(
+    () => reportEntries.find((entry) => Number(entry.id) === Number(activeEntryId)) || null,
+    [activeEntryId, reportEntries],
+  );
+
+  const headerExternalNumber = activeEntry?.numeroExterno || reportEntries[0]?.numeroExterno || selectedContext?.numero_externo || "-";
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -311,6 +405,41 @@ function ProntuarioV2Page() {
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (!reportEntries.length) {
+      setActiveEntryId(null);
+      setPhotosVisibleForEntryId(null);
+      return;
+    }
+
+    if (activeEntryId && !reportEntries.some((entry) => Number(entry.id) === Number(activeEntryId))) {
+      setActiveEntryId(null);
+      setPhotosVisibleForEntryId(null);
+    }
+  }, [activeEntryId, reportEntries]);
+
+  useEffect(() => {
+    const placaFromQuery = formatPlate(searchParams.get("placa") || "");
+
+    if (!placaFromQuery) {
+      return;
+    }
+
+    setSearchMode("placa");
+    setSearchValue(placaFromQuery);
+    setAutoSearchPlate(placaFromQuery);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!autoSearchPlate || autoSearchPlate !== searchValue) {
+      return;
+    }
+
+    void handleSearch().finally(() => {
+      setAutoSearchPlate("");
+    });
+  }, [autoSearchPlate, searchValue]);
 
   async function openProntuario(candidate) {
     setLoading(true);
@@ -322,6 +451,8 @@ function ProntuarioV2Page() {
       setProntuario(data);
       setSelectedContext(candidate);
       setHighlightOrderId(candidate.highlight_order_id || null);
+      setActiveEntryId(candidate.highlight_order_id || null);
+      setPhotosVisibleForEntryId(null);
     } catch (requestError) {
       setProntuario(null);
       setError(requestError?.response?.data?.message || "Nao foi possivel carregar o prontuario.");
@@ -362,6 +493,8 @@ function ProntuarioV2Page() {
     setSearchResults([]);
     setSelectedContext(null);
     setHighlightOrderId(null);
+    setActiveEntryId(null);
+    setPhotosVisibleForEntryId(null);
 
     try {
       let candidates = [];
@@ -392,6 +525,39 @@ function ProntuarioV2Page() {
       if (searchMode === "nome") {
         const response = await listClientes({ nome: String(searchValue || "").trim(), limit: 20 });
         candidates = await resolveCandidatesByClientes(readCollection(response));
+      }
+
+      if (searchMode === "os") {
+        const response = await listOrdensServicoV2({ numeroOs: normalizeOsNumber(searchValue) });
+        const details = (
+          await Promise.all(
+            readCollection(response).map(async (ordem) => {
+              try {
+                return await getOrdemServicoV2(ordem.id);
+              } catch {
+                return null;
+              }
+            }),
+          )
+        ).filter(Boolean);
+
+        candidates = details.map((ordem) =>
+          buildSearchCandidate({
+            motocicleta_id: ordem.motocicleta_id,
+            cliente_id: ordem.cliente_id,
+            cliente_nome: ordem.cliente_nome,
+            cliente_cpf: ordem.cliente_cpf,
+            cliente_telefone: ordem.cliente_telefone,
+            motocicleta_marca: ordem.motocicleta_marca,
+            motocicleta_modelo: ordem.motocicleta_modelo,
+            motocicleta_ano: ordem.motocicleta_ano,
+            motocicleta_cor: ordem.motocicleta_cor,
+            motocicleta_placa: ordem.motocicleta_placa,
+            highlight_order_id: ordem.id,
+            numero_externo: getLatestOrcamento(ordem)?.numero_externo || "",
+            match_label: ordem.numero_os,
+          }),
+        );
       }
 
       if (searchMode === "externo") {
@@ -454,8 +620,60 @@ function ProntuarioV2Page() {
     }
   }
 
+  function handleOpenEntry(entryId) {
+    setActiveEntryId(entryId);
+    setPhotosVisibleForEntryId(null);
+  }
+
+  function handleCloseEntry() {
+    setActiveEntryId(null);
+    setPhotosVisibleForEntryId(null);
+  }
+
+  function replaceOrdemInProntuario(ordemAtualizada) {
+    setProntuario((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        ordens_servico: (current.ordens_servico || []).map((ordem) =>
+          Number(ordem.id) === Number(ordemAtualizada.id) ? ordemAtualizada : ordem,
+        ),
+      };
+    });
+  }
+
+  async function handleOpenReceiptPdf(entry) {
+    if (!entry?.assinaturaRecebimento) {
+      return;
+    }
+
+    let pdfUrl = entry.assinaturaRecebimentoPdfUrl;
+
+    if (!pdfUrl) {
+      setActionBusyOrderId(entry.id);
+      setError("");
+
+      try {
+        const ordemAtualizada = await generateAssinaturaRecebimentoPdfV2(entry.id);
+        replaceOrdemInProntuario(ordemAtualizada);
+        pdfUrl = getPublicAssetUrl(ordemAtualizada?.assinatura_recebimento?.pdf_url);
+      } catch (requestError) {
+        setError(requestError?.response?.data?.message || "Nao foi possivel gerar o PDF do contrato.");
+      } finally {
+        setActionBusyOrderId(null);
+      }
+    }
+
+    if (pdfUrl) {
+      window.open(pdfUrl, "_blank", "noopener,noreferrer");
+    }
+  }
+
   function handlePrint() {
-    if (!prontuario) {
+    if (!prontuario || !activeEntry) {
       return;
     }
 
@@ -474,94 +692,102 @@ function ProntuarioV2Page() {
       .filter(Boolean)
       .join(" ");
 
-    const entriesHtml = reportEntries
-      .map(
-        (entry) => `
-          <section style="padding:18px 0;border-top:1px solid #d8dde8;">
-            <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
-              <div>
-                <h2 style="margin:0 0 8px;font-size:20px;">${escapeHtml(entry.numeroOs)}</h2>
-                <p style="margin:4px 0;"><strong>Entrada:</strong> ${escapeHtml(formatReportDateTime(entry.entradaEm))}</p>
-                <p style="margin:4px 0;"><strong>Saida:</strong> ${escapeHtml(formatReportDateTime(entry.saidaEm))}</p>
-                <p style="margin:4px 0;"><strong>Queixa:</strong> ${escapeHtml(entry.queixa)}</p>
-                ${entry.diagnostico ? `<p style="margin:4px 0;"><strong>Diagnostico:</strong> ${escapeHtml(entry.diagnostico)}</p>` : ""}
+    const entryHtml = `
+      <section style="padding:18px 0;border-top:1px solid #d8dde8;">
+        <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
+          <div>
+            <h2 style="margin:0 0 8px;font-size:20px;">${escapeHtml(activeEntry.numeroOs)}</h2>
+            <p style="margin:4px 0;"><strong>Entrada:</strong> ${escapeHtml(formatReportDateTime(activeEntry.entradaEm))}</p>
+            <p style="margin:4px 0;"><strong>Saida:</strong> ${escapeHtml(formatReportDateTime(activeEntry.saidaEm))}</p>
+            <p style="margin:4px 0;"><strong>Garantia:</strong> 3 meses</p>
+            <p style="margin:4px 0;"><strong>Tempo restante:</strong> ${escapeHtml(formatWarrantyCountdown(activeEntry.garantiaFimOs, clockNow))}</p>
+            <p style="margin:4px 0;"><strong>Queixa:</strong> ${escapeHtml(activeEntry.queixa)}</p>
+            ${activeEntry.diagnostico ? `<p style="margin:4px 0;"><strong>Diagnostico:</strong> ${escapeHtml(activeEntry.diagnostico)}</p>` : ""}
+          </div>
+          <div style="text-align:right;">
+            <p style="margin:4px 0;"><strong>Status:</strong> ${escapeHtml(activeEntry.status)}</p>
+            <p style="margin:4px 0;"><strong>Numero externo:</strong> ${escapeHtml(activeEntry.numeroExterno || "-")}</p>
+            <p style="margin:4px 0;"><strong>Total:</strong> R$ ${escapeHtml(toMoney(activeEntry.valorOrcamento || 0))}</p>
+          </div>
+        </div>
+        ${
+          activeEntry.orcamentoItems.length
+            ? `
+              <table style="width:100%;border-collapse:collapse;margin-top:14px;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;padding:8px 0;border-bottom:1px solid #d8dde8;">Orcamento</th>
+                    <th style="text-align:center;padding:8px 0;border-bottom:1px solid #d8dde8;">Qtd</th>
+                    <th style="text-align:right;padding:8px 0;border-bottom:1px solid #d8dde8;">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${activeEntry.orcamentoItems
+                    .map(
+                      (item) => `
+                        <tr>
+                          <td style="padding:8px 0;border-bottom:1px solid #edf1f7;">${escapeHtml(item.descricao)}</td>
+                          <td style="padding:8px 0;text-align:center;border-bottom:1px solid #edf1f7;">${escapeHtml(item.quantidade || "1")}</td>
+                          <td style="padding:8px 0;text-align:right;border-bottom:1px solid #edf1f7;">R$ ${escapeHtml(toMoney(item.valor_total || 0))}</td>
+                        </tr>
+                      `,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            `
+            : ""
+        }
+        ${
+          activeEntry.services.length
+            ? `
+              <table style="width:100%;border-collapse:collapse;margin-top:14px;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;padding:8px 0;border-bottom:1px solid #d8dde8;">Servico</th>
+                    <th style="text-align:left;padding:8px 0;border-bottom:1px solid #d8dde8;">Data do servico</th>
+                    <th style="text-align:left;padding:8px 0;border-bottom:1px solid #d8dde8;">Executado ha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${activeEntry.services
+                    .map(
+                      (service) => `
+                        <tr>
+                          <td style="padding:8px 0;border-bottom:1px solid #edf1f7;">
+                            ${escapeHtml(service.descricao)}
+                            ${service.observacao ? `<div style="margin-top:4px;font-size:12px;color:#53627c;">${escapeHtml(service.observacao)}</div>` : ""}
+                          </td>
+                          <td style="padding:8px 0;border-bottom:1px solid #edf1f7;">${escapeHtml(formatReportDateTime(service.dataServico))}</td>
+                          <td style="padding:8px 0;border-bottom:1px solid #edf1f7;">${escapeHtml(formatDaysSinceLabel(service.dataServico, clockNow))}</td>
+                        </tr>
+                      `,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            `
+            : ""
+        }
+        ${
+          activeEntry.assinaturaRecebimento
+            ? `
+              <div style="margin-top:16px;padding:14px;border:1px solid #d8dde8;border-radius:14px;background:#f7f9fc;">
+                <p style="margin:0 0 8px;"><strong>${escapeHtml(activeEntry.assinaturaRecebimento.termo_titulo || "Termo de recebimento")}</strong></p>
+                <p style="margin:4px 0 10px;"><strong>Assinado em:</strong> ${escapeHtml(formatReportDateTime(activeEntry.assinaturaRecebimento.assinado_em))}</p>
+                <pre style="white-space:pre-wrap;font-family:Arial,sans-serif;font-size:13px;line-height:1.5;margin:0 0 12px;">${escapeHtml(activeEntry.assinaturaRecebimento.termo_texto || "")}</pre>
+                <img src="${activeEntry.assinaturaRecebimento.assinatura_data_url}" alt="Assinatura do cliente" style="max-width:320px;width:100%;border:1px solid #d8dde8;border-radius:12px;background:#081327;" />
               </div>
-              <div style="text-align:right;">
-                <p style="margin:4px 0;"><strong>Status:</strong> ${escapeHtml(entry.status)}</p>
-                <p style="margin:4px 0;"><strong>Numero externo:</strong> ${escapeHtml(entry.numeroExterno || "-")}</p>
-                <p style="margin:4px 0;"><strong>Total:</strong> R$ ${escapeHtml(toMoney(entry.valorOrcamento || 0))}</p>
-              </div>
-            </div>
-            ${
-              entry.orcamentoItems.length
-                ? `
-                  <table style="width:100%;border-collapse:collapse;margin-top:14px;">
-                    <thead>
-                      <tr>
-                        <th style="text-align:left;padding:8px 0;border-bottom:1px solid #d8dde8;">Orcamento</th>
-                        <th style="text-align:center;padding:8px 0;border-bottom:1px solid #d8dde8;">Qtd</th>
-                        <th style="text-align:right;padding:8px 0;border-bottom:1px solid #d8dde8;">Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${entry.orcamentoItems
-                        .map(
-                          (item) => `
-                            <tr>
-                              <td style="padding:8px 0;border-bottom:1px solid #edf1f7;">${escapeHtml(item.descricao)}</td>
-                              <td style="padding:8px 0;text-align:center;border-bottom:1px solid #edf1f7;">${escapeHtml(item.quantidade || "1")}</td>
-                              <td style="padding:8px 0;text-align:right;border-bottom:1px solid #edf1f7;">R$ ${escapeHtml(toMoney(item.valor_total || 0))}</td>
-                            </tr>
-                          `,
-                        )
-                        .join("")}
-                    </tbody>
-                  </table>
-                `
-                : ""
-            }
-            ${
-              entry.services.length
-                ? `
-                  <table style="width:100%;border-collapse:collapse;margin-top:14px;">
-                    <thead>
-                      <tr>
-                        <th style="text-align:left;padding:8px 0;border-bottom:1px solid #d8dde8;">Servico</th>
-                        <th style="text-align:left;padding:8px 0;border-bottom:1px solid #d8dde8;">Executado por</th>
-                        <th style="text-align:left;padding:8px 0;border-bottom:1px solid #d8dde8;">Data</th>
-                        <th style="text-align:left;padding:8px 0;border-bottom:1px solid #d8dde8;">Garantia ate</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${entry.services
-                        .map(
-                          (service) => `
-                            <tr>
-                              <td style="padding:8px 0;border-bottom:1px solid #edf1f7;">
-                                ${escapeHtml(service.descricao)}
-                                ${service.observacao ? `<div style="margin-top:4px;font-size:12px;color:#53627c;">${escapeHtml(service.observacao)}</div>` : ""}
-                              </td>
-                              <td style="padding:8px 0;border-bottom:1px solid #edf1f7;">${escapeHtml(service.executadoPor)}</td>
-                              <td style="padding:8px 0;border-bottom:1px solid #edf1f7;">${escapeHtml(formatReportDateTime(service.dataServico))}</td>
-                              <td style="padding:8px 0;border-bottom:1px solid #edf1f7;">${escapeHtml(formatReportDateTime(service.garantiaFim))}</td>
-                            </tr>
-                          `,
-                        )
-                        .join("")}
-                    </tbody>
-                  </table>
-                `
-                : ""
-            }
-          </section>
-        `,
-      )
-      .join("");
+            `
+            : ""
+        }
+      </section>
+    `;
 
     printWindow.document.write(`
       <html lang="pt-BR">
         <head>
-          <title>Prontuario ${escapeHtml(prontuario.motocicleta_placa || "")}</title>
+          <title>${escapeHtml(activeEntry.numeroOs)} - ${escapeHtml(prontuario.motocicleta_placa || "")}</title>
           <style>
             body { font-family: Arial, sans-serif; color: #172033; padding: 28px; }
             h1 { margin: 0 0 10px; }
@@ -569,13 +795,13 @@ function ProntuarioV2Page() {
           </style>
         </head>
         <body>
-          <h1>Prontuario da motocicleta</h1>
+          <h1>Prontuario da OS ${escapeHtml(activeEntry.numeroOs)}</h1>
           <p><strong>Cliente:</strong> ${escapeHtml(prontuario.cliente_nome || "-")}</p>
           <p><strong>CPF:</strong> ${escapeHtml(prontuario.cliente_cpf || "-")}</p>
           <p><strong>Telefone:</strong> ${escapeHtml(prontuario.cliente_telefone || "-")}</p>
           <p><strong>Moto:</strong> ${escapeHtml(headerMoto || "-")}</p>
           <p><strong>Placa:</strong> ${escapeHtml(prontuario.motocicleta_placa || "-")}</p>
-          ${entriesHtml || "<p>Nenhum registro encontrado.</p>"}
+          ${entryHtml}
         </body>
       </html>
     `);
@@ -583,28 +809,6 @@ function ProntuarioV2Page() {
     printWindow.focus();
     printWindow.print();
   }
-
-  useEffect(() => {
-    const placaFromQuery = formatPlate(searchParams.get("placa") || "");
-
-    if (!placaFromQuery) {
-      return;
-    }
-
-    setSearchMode("placa");
-    setSearchValue(placaFromQuery);
-    setAutoSearchPlate(placaFromQuery);
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (!autoSearchPlate || autoSearchPlate !== searchValue) {
-      return;
-    }
-
-    void handleSearch().finally(() => {
-      setAutoSearchPlate("");
-    });
-  }, [autoSearchPlate, searchValue]);
 
   return (
     <section className="page-section prontuario-report-page">
@@ -617,7 +821,7 @@ function ProntuarioV2Page() {
             <div>
               <p className="eyebrow">Prontuario</p>
               <h2>Relatorio da motocicleta</h2>
-              <p className="subtitle">Pesquise por placa, CPF, nome do cliente ou numero externo para abrir o historico completo.</p>
+              <p className="subtitle">Pesquise por placa, CPF, nome, numero da OS ou numero externo para abrir o historico.</p>
             </div>
           </div>
         </div>
@@ -636,6 +840,8 @@ function ProntuarioV2Page() {
                   setProntuario(null);
                   setSelectedContext(null);
                   setHighlightOrderId(null);
+                  setActiveEntryId(null);
+                  setPhotosVisibleForEntryId(null);
                   setError("");
                 }}
               >
@@ -657,10 +863,6 @@ function ProntuarioV2Page() {
             <div className="button-row prontuario-search-actions">
               <button type="button" className="primary-button" onClick={handleSearch} disabled={loading || !searchValue.trim()}>
                 {loading ? "Buscando..." : "Buscar"}
-              </button>
-              <button type="button" className="ghost-button" onClick={handlePrint} disabled={!prontuario}>
-                <AppIcon name="printer" size={16} />
-                Imprimir
               </button>
             </div>
           </div>
@@ -685,7 +887,7 @@ function ProntuarioV2Page() {
                     {candidate.motocicleta_placa ? ` - ${candidate.motocicleta_placa}` : ""}
                   </p>
                   <small>
-                    {candidate.cliente_cpf || "Sem CPF"}
+                    {candidate.match_label || candidate.cliente_cpf || "Sem identificacao"}
                     {candidate.numero_externo ? ` • ${candidate.numero_externo}` : ""}
                   </small>
                 </div>
@@ -729,47 +931,176 @@ function ProntuarioV2Page() {
               </div>
             </section>
 
-            <div className="prontuario-report-list">
-              {reportEntries.map((entry) => (
-                <section className={`prontuario-report-entry ${entry.highlighted ? "is-highlighted" : ""}`} key={entry.id}>
+            {!activeEntry ? (
+              <div className="prontuario-report-list">
+                <div className="prontuario-report-block">
+                  <div className="prontuario-report-block-header">
+                    <h3>Ordens de servico desta motocicleta</h3>
+                  </div>
+                  <div className="prontuario-order-list">
+                    {reportEntries.map((entry) => (
+                      <article className="prontuario-order-card" key={entry.id}>
+                        <div className="prontuario-order-card-head">
+                          <div>
+                            <h2>{entry.numeroOs}</h2>
+                            <p>{entry.numeroExterno || "Sem numero externo"}</p>
+                          </div>
+                          <div className="prontuario-report-badges">
+                            <span className="badge badge-info">{entry.status}</span>
+                          </div>
+                        </div>
+
+                        <div className="prontuario-order-card-grid">
+                          <div>
+                            <span>Data do servico</span>
+                            <strong>{formatReportDate(entry.dataServico)}</strong>
+                          </div>
+                          <div>
+                            <span>Tempo</span>
+                            <strong>{formatDaysSinceLabel(entry.dataServico, clockNow)}</strong>
+                          </div>
+                        </div>
+
+                        <div className="prontuario-order-card-grid">
+                          <div>
+                            <span>Servicos executados</span>
+                            <strong>{entry.services.length}</strong>
+                          </div>
+                          <div>
+                            <span>Fotos da OS</span>
+                            <strong>{entry.fotosEntrada.length}</strong>
+                          </div>
+                        </div>
+
+                        <div className="prontuario-order-card-actions">
+                          <button type="button" className="primary-button" onClick={() => handleOpenEntry(entry.id)}>
+                            Abrir OS
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {activeEntry ? (
+              <div className="prontuario-order-detail">
+                <section className="prontuario-report-entry is-highlighted">
+                  <div className="prontuario-order-toolbar print-hidden">
+                    {reportEntries.length > 1 ? (
+                      <button type="button" className="ghost-button" onClick={handleCloseEntry}>
+                        Voltar para as OS
+                      </button>
+                    ) : null}
+                    <button type="button" className="ghost-button" onClick={handlePrint}>
+                      <AppIcon name="printer" size={16} />
+                      Imprimir esta OS
+                    </button>
+                    {activeEntry.fotosEntrada.length ? (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() =>
+                          setPhotosVisibleForEntryId((current) => (Number(current) === Number(activeEntry.id) ? null : activeEntry.id))
+                        }
+                      >
+                        <AppIcon name="camera" size={16} />
+                        {Number(photosVisibleForEntryId) === Number(activeEntry.id) ? "Ocultar fotos" : "Ver fotos da moto"}
+                      </button>
+                    ) : null}
+                    {activeEntry.assinaturaRecebimento ? (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => void handleOpenReceiptPdf(activeEntry)}
+                        disabled={Number(actionBusyOrderId) === Number(activeEntry.id)}
+                      >
+                        <AppIcon name="printer" size={16} />
+                        {Number(actionBusyOrderId) === Number(activeEntry.id)
+                          ? "Gerando PDF..."
+                          : activeEntry.assinaturaRecebimentoPdfUrl
+                            ? "Abrir PDF do contrato"
+                            : "Gerar PDF do contrato"}
+                      </button>
+                    ) : null}
+                  </div>
+
                   <div className="prontuario-report-head">
                     <div>
-                      <h2>{entry.numeroOs}</h2>
+                      <h2>{activeEntry.numeroOs}</h2>
                       <p>
-                        Entrada {formatReportDateTime(entry.entradaEm)}
+                        Entrada {formatReportDateTime(activeEntry.entradaEm)}
                         {" • "}
-                        Saida {formatReportDateTime(entry.saidaEm)}
+                        Saida {formatReportDateTime(activeEntry.saidaEm)}
                       </p>
                     </div>
                     <div className="prontuario-report-badges">
-                      <span className="badge badge-info">{entry.status}</span>
-                      {entry.numeroExterno ? <span className="badge badge-warning">{entry.numeroExterno}</span> : null}
+                      <span className="badge badge-info">{activeEntry.status}</span>
+                      {activeEntry.numeroExterno ? <span className="badge badge-warning">{activeEntry.numeroExterno}</span> : null}
                     </div>
                   </div>
 
                   <div className="prontuario-report-grid">
                     <div>
                       <span>Queixa</span>
-                      <p>{entry.queixa}</p>
+                      <p>{activeEntry.queixa}</p>
                     </div>
                     <div>
                       <span>Prazo</span>
-                      <p>{formatReportDateTime(entry.prazoEntrega)}</p>
+                      <p>{formatReportDateTime(activeEntry.prazoEntrega)}</p>
+                    </div>
+                    <div>
+                      <span>Data do servico</span>
+                      <p>{formatReportDateTime(activeEntry.dataServico)}</p>
+                    </div>
+                    <div>
+                      <span>Tempo do servico</span>
+                      <p>{formatDaysSinceLabel(activeEntry.dataServico, clockNow)}</p>
+                    </div>
+                    <div>
+                      <span>Garantia</span>
+                      <p>3 meses</p>
+                    </div>
+                    <div>
+                      <span>Tempo restante da garantia</span>
+                      <p className={isWarrantyExpired(activeEntry.garantiaFimOs, clockNow) ? "error-text" : "success-text"}>
+                        {formatWarrantyCountdown(activeEntry.garantiaFimOs, clockNow)}
+                      </p>
                     </div>
                     <div>
                       <span>Total do orcamento</span>
-                      <p>R$ {toMoney(entry.valorOrcamento)}</p>
+                      <p>R$ {toMoney(activeEntry.valorOrcamento)}</p>
                     </div>
                   </div>
 
-                  {entry.diagnostico ? (
+                  {activeEntry.diagnostico ? (
                     <div className="prontuario-report-block">
                       <span>Diagnostico</span>
-                      <p>{entry.diagnostico}</p>
+                      <p>{activeEntry.diagnostico}</p>
                     </div>
                   ) : null}
 
-                  {entry.orcamentoItems.length ? (
+                  {Number(photosVisibleForEntryId) === Number(activeEntry.id) ? (
+                    <div className="prontuario-report-block">
+                      <div className="prontuario-report-block-header">
+                        <h3>Fotos da moto nesta OS</h3>
+                      </div>
+                      <div className="prontuario-photo-grid">
+                        {activeEntry.fotosEntrada.map((foto) => (
+                          <a className="prontuario-photo-card" href={foto.url} target="_blank" rel="noreferrer" key={`${activeEntry.id}-${foto.id}`}>
+                            <img src={foto.url} alt={foto.nomeArquivo || `Foto da OS ${activeEntry.numeroOs}`} />
+                            <div>
+                              <strong>{foto.nomeArquivo || "Foto registrada"}</strong>
+                              <small>{formatReportDateTime(foto.criadoEm)}</small>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {activeEntry.orcamentoItems.length ? (
                     <div className="prontuario-report-block">
                       <div className="prontuario-report-block-header">
                         <h3>Orcamento</h3>
@@ -783,8 +1114,8 @@ function ProntuarioV2Page() {
                           </tr>
                         </thead>
                         <tbody>
-                          {entry.orcamentoItems.map((item) => (
-                            <tr key={`${entry.id}-${item.id}`}>
+                          {activeEntry.orcamentoItems.map((item) => (
+                            <tr key={`${activeEntry.id}-${item.id}`}>
                               <td>{item.descricao}</td>
                               <td>{item.quantidade || "1"}</td>
                               <td>R$ {toMoney(item.valor_total || 0)}</td>
@@ -795,7 +1126,26 @@ function ProntuarioV2Page() {
                     </div>
                   ) : null}
 
-                  {entry.services.length ? (
+                  {activeEntry.assinaturaRecebimento ? (
+                    <div className="prontuario-report-block">
+                      <div className="prontuario-report-block-header">
+                        <h3>Termo assinado na recepcao</h3>
+                      </div>
+                      <div className="prontuario-receipt-grid">
+                        <div className="prontuario-receipt-copy">
+                          <span>Assinado em</span>
+                          <p>{formatReportDateTime(activeEntry.assinaturaRecebimento.assinado_em)}</p>
+                          <pre>{activeEntry.assinaturaRecebimento.termo_texto}</pre>
+                        </div>
+                        <div className="prontuario-receipt-signature">
+                          <span>Assinatura</span>
+                          <img src={activeEntry.assinaturaRecebimento.assinatura_data_url} alt={`Assinatura do cliente da OS ${activeEntry.numeroOs}`} />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {activeEntry.services.length ? (
                     <div className="prontuario-report-block">
                       <div className="prontuario-report-block-header">
                         <h3>Execucao e historico</h3>
@@ -804,23 +1154,19 @@ function ProntuarioV2Page() {
                         <thead>
                           <tr>
                             <th>Servico</th>
-                            <th>Data</th>
-                            <th>Responsavel</th>
-                            <th>Garantia ate</th>
-                            <th>Tempo garantia</th>
+                            <th>Data do servico</th>
+                            <th>Executado ha</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {entry.services.map((service) => (
-                            <tr key={`${entry.id}-${service.id}`}>
+                          {activeEntry.services.map((service) => (
+                            <tr key={`${activeEntry.id}-${service.id}`}>
                               <td>
                                 <strong>{service.descricao}</strong>
                                 {service.observacao ? <small>{service.observacao}</small> : null}
                               </td>
                               <td>{formatReportDateTime(service.dataServico)}</td>
-                              <td>{service.executadoPor}</td>
-                              <td>{formatReportDateTime(service.garantiaFim)}</td>
-                              <td>{formatWarrantyCountdown(service.garantiaFim, clockNow)}</td>
+                              <td>{formatDaysSinceLabel(service.dataServico, clockNow)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -828,8 +1174,8 @@ function ProntuarioV2Page() {
                     </div>
                   ) : null}
                 </section>
-              ))}
-            </div>
+              </div>
+            ) : null}
           </article>
         ) : null}
       </div>

@@ -97,7 +97,7 @@ function toPainelClientesDto(atendimento) {
 }
 
 function mapAtendimentoByPerfil(atendimento, perfil) {
-  if (perfil === "OFICINA") {
+  if (normalizeRole(perfil) === "OFICINA") {
     return toAtendimentoOficinaDto(atendimento);
   }
 
@@ -109,3 +109,4 @@ module.exports = {
   toPainelOficinaDto,
   toPainelClientesDto,
 };
+const { normalizeRole } = require("./roles");

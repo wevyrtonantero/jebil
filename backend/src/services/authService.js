@@ -2,14 +2,28 @@ const bcrypt = require("bcryptjs");
 const { signAccessToken } = require("../config/jwt");
 const { ApiError } = require("../utils/ApiError");
 const { hashPassword } = require("../utils/hashPassword");
+const { buildRoleLookupCandidates, normalizeRole, perfisGerenciadosPorDiretoria } = require("../utils/roles");
 const usuarioRepository = require("../repositories/usuarioRepository");
 
 const loginAliasMap = {
-  admin: process.env.SEED_ADMIN_EMAIL || "admin@jebil.local",
-  recepcao: process.env.SEED_RECEPCAO_EMAIL || "recepcao@jebil.local",
-  oficina: process.env.SEED_OFICINA_EMAIL || "oficina@jebil.local",
-  orcamentista: process.env.SEED_ORCAMENTISTA_EMAIL || "orcamentista@jebil.local",
+  admin: [process.env.SEED_ADMIN_EMAIL, process.env.SEED_DIRETORIA_EMAIL, "admin@jebil.local", "diretoria@jebil.local"],
+  diretoria: [process.env.SEED_DIRETORIA_EMAIL, process.env.SEED_ADMIN_EMAIL, "diretoria@jebil.local", "admin@jebil.local"],
+  recepcao: [process.env.SEED_RECEPCAO_EMAIL, "recepcao@jebil.local"],
+  oficina: [process.env.SEED_OFICINA_EMAIL, "oficina@jebil.local"],
+  orcamentista: [process.env.SEED_ORCAMENTISTA_EMAIL, process.env.SEED_SUPERVISAO_EMAIL, "orcamentista@jebil.local", "supervisao@jebil.local"],
+  supervisao: [process.env.SEED_SUPERVISAO_EMAIL, process.env.SEED_ORCAMENTISTA_EMAIL, "supervisao@jebil.local", "orcamentista@jebil.local"],
 };
+
+function resolveLoginCandidates(email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const aliasCandidates = loginAliasMap[normalizedEmail];
+
+  if (!aliasCandidates) {
+    return [email];
+  }
+
+  return [...new Set(aliasCandidates.filter(Boolean))];
+}
 
 function sanitizeUser(user) {
   return {
@@ -25,8 +39,16 @@ function sanitizeUser(user) {
 }
 
 async function login(credentials) {
-  const loginEmail = loginAliasMap[credentials.email] || credentials.email;
-  const user = await usuarioRepository.findByEmail(loginEmail);
+  const loginCandidates = resolveLoginCandidates(credentials.email);
+  let user = null;
+
+  for (const loginEmail of loginCandidates) {
+    user = await usuarioRepository.findByEmail(loginEmail);
+
+    if (user) {
+      break;
+    }
+  }
 
   if (!user) {
     throw new ApiError(401, "Email ou senha invalidos.");
@@ -104,9 +126,10 @@ async function updateOwnPassword(userId, senhaAtual, novaSenha) {
 }
 
 async function updateSystemPassword(targetPerfil, senha) {
-  const allowedTargets = new Set(["RECEPCAO", "OFICINA", "ORCAMENTISTA"]);
+  const normalizedTargetPerfil = normalizeRole(targetPerfil);
+  const allowedTargets = new Set(perfisGerenciadosPorDiretoria);
 
-  if (!allowedTargets.has(targetPerfil)) {
+  if (!allowedTargets.has(normalizedTargetPerfil)) {
     throw new ApiError(400, "Perfil nao permitido para troca de senha.");
   }
 
@@ -116,7 +139,15 @@ async function updateSystemPassword(targetPerfil, senha) {
     throw new ApiError(400, "A nova senha precisa ter pelo menos 4 caracteres.");
   }
 
-  const user = await usuarioRepository.findByPerfil(targetPerfil);
+  let user = null;
+
+  for (const perfilCandidate of buildRoleLookupCandidates(normalizedTargetPerfil)) {
+    user = await usuarioRepository.findByPerfil(perfilCandidate);
+
+    if (user) {
+      break;
+    }
+  }
 
   if (!user) {
     throw new ApiError(404, "Usuario de acesso nao encontrado.");

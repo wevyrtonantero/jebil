@@ -1,4 +1,4 @@
-const perfisUsuarioV2 = ["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"];
+const perfisUsuarioV2 = ["DIRETORIA", "RECEPCAO", "OFICINA", "SUPERVISAO"];
 
 const prioridadeNiveisV2 = ["NORMAL", "ALTA", "URGENTE"];
 const autorizacaoStatusV2 = [

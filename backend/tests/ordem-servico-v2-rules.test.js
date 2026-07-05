@@ -8,8 +8,8 @@ const {
   resolveInitialItemStatus,
 } = require("../src/utils/ordemServicoV2Rules");
 
-test("ordemServicoV2Rules exposes ORCAMENTISTA among valid profiles", () => {
-  assert.equal(perfisUsuarioV2.includes("ORCAMENTISTA"), true);
+test("ordemServicoV2Rules exposes SUPERVISAO among valid profiles", () => {
+  assert.equal(perfisUsuarioV2.includes("SUPERVISAO"), true);
 });
 
 test("resolveInitialItemStatus sends authorized direct execution items straight to execution queue", () => {

@@ -246,7 +246,7 @@ function RecepcaoV2Page() {
     try {
       const mensagemPreparada = buildReadyWhatsappMessage(ordem);
       await registrarComunicacaoWhatsAppV2(ordem.id, {
-        tipo_comunicacao: "RETIRADA_CLIENTE",
+        tipo_comunicacao: "SERVICO_FINALIZADO",
         destinatario: ordem.cliente_telefone,
         finalidade: "Aviso de motocicleta pronta para retirada.",
         mensagem_preparada: mensagemPreparada,
@@ -700,14 +700,6 @@ function RecepcaoV2Page() {
       }
 
       const isServicoRapido = form.dispensa_queixa_principal;
-
-      setSuccessData({
-        numero_os: ordem.numero_os,
-        cliente_nome: cliente.nome,
-        motocicleta_modelo: motocicleta.modelo,
-        motocicleta_placa: motocicleta.placa,
-        fotos_entrada: bundle.fotos_entrada?.length || 0,
-      });
       setForm(createInitialForm());
       setSelectedClienteId(null);
       setSelectedMotoId(null);
@@ -719,7 +711,16 @@ function RecepcaoV2Page() {
 
       if (!isServicoRapido) {
         navigate(`/recepcao/fotos?ordemId=${ordem.id}`);
+        return;
       }
+
+      setSuccessData({
+        numero_os: ordem.numero_os,
+        cliente_nome: cliente.nome,
+        motocicleta_modelo: motocicleta.modelo,
+        motocicleta_placa: motocicleta.placa,
+        fotos_entrada: bundle.fotos_entrada?.length || 0,
+      });
     } catch (requestError) {
       const status = requestError?.response?.status;
       const message = requestError?.response?.data?.message || "Nao foi possivel abrir a ordem de servico.";

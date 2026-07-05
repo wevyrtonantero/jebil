@@ -2,40 +2,31 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import AppIcon from "../components/common/AppIcon";
+import { APP_ACCESS_ROLES, DIRECTOR_ROLES, getRoleLabel, hasAllowedRole } from "../utils/roles";
 
 function AppLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [menuHidden, setMenuHidden] = useState(false);
-  const isAdmin = user?.perfil === "ADMIN";
-  const canUseRecepcao = ["ADMIN", "RECEPCAO"].includes(user?.perfil);
-  const canUseOperacaoV2 = ["ADMIN", "OFICINA", "ORCAMENTISTA", "RECEPCAO"].includes(user?.perfil);
-  const canUseProntuarioV2 = ["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"].includes(user?.perfil);
-  const canUseOrcamentosV2 = ["ADMIN", "ORCAMENTISTA"].includes(user?.perfil);
-  const canUseOficina = ["ADMIN", "OFICINA"].includes(user?.perfil);
-  const canUsePainelClientes = ["ADMIN", "RECEPCAO", "OFICINA", "ORCAMENTISTA"].includes(user?.perfil);
+  const canAccessDashboard = hasAllowedRole(user?.perfil, DIRECTOR_ROLES);
+  const canAccessApplication = hasAllowedRole(user?.perfil, APP_ACCESS_ROLES);
   const isTvRoute = location.pathname === "/oficina";
   const isImmersiveOperationRoute = location.pathname === "/v2/operacao";
   const isPhotoCaptureRoute = location.pathname === "/recepcao/fotos";
-  const roleLabel = {
-    ADMIN: "Administrador",
-    RECEPCAO: "Recepcao",
-    OFICINA: "Oficina",
-    ORCAMENTISTA: "Orcamentista",
-  };
-  const displayName = roleLabel[user?.perfil] || user?.nome;
+  const displayName = user?.nome || getRoleLabel(user?.perfil);
   const navigationItems = [
-    { to: "/dashboard", label: "Visao geral", icon: "board", show: isAdmin },
-    { to: "/recepcao", label: "Recepcao", icon: "reception", show: canUseRecepcao },
-    { to: "/recepcao/fotos", label: "Fotos", icon: "camera", show: canUseRecepcao },
-    { to: "/oficina", label: "Oficina", icon: "workshop", show: canUseOficina },
-    { to: "/v2/operacao", label: "Operacao", icon: "workshop", show: canUseOperacaoV2 },
-    { to: "/v2/orcamentos", label: "Orcamentos", icon: "money", show: canUseOrcamentosV2 },
-    { to: "/v2/prontuario", label: "Prontuario", icon: "motorcycle", show: canUseProntuarioV2 },
-    { to: "/mecanicos", label: "Mecanicos", icon: "mechanic", show: isAdmin },
-    { to: "/clientes", label: "Clientes", icon: "clients", show: canUseRecepcao },
-    { to: "/senhas", label: "Senhas", icon: "settings", show: Boolean(user) },
-    { to: "/painel/clientes", label: "Painel clientes", icon: "clock", show: canUsePainelClientes },
+    { to: "/dashboard", label: "Visao geral", icon: "board", show: canAccessDashboard },
+    { to: "/recepcao", label: "Recepcao", icon: "reception", show: canAccessApplication },
+    { to: "/recepcao/fotos", label: "Fotos", icon: "camera", show: canAccessApplication },
+    { to: "/oficina", label: "Oficina", icon: "workshop", show: canAccessApplication },
+    { to: "/v2/operacao", label: "Operacao", icon: "workshop", show: canAccessApplication },
+    { to: "/v2/orcamentos", label: "Orcamentos", icon: "money", show: canAccessApplication },
+    { to: "/v2/prontuario", label: "Prontuario", icon: "motorcycle", show: canAccessApplication },
+    { to: "/mecanicos", label: "Mecanicos", icon: "mechanic", show: canAccessApplication },
+    { to: "/atendimentos", label: "Atendimentos", icon: "reports", show: canAccessApplication },
+    { to: "/clientes", label: "Clientes", icon: "clients", show: canAccessApplication },
+    { to: "/senhas", label: "Senhas", icon: "settings", show: canAccessDashboard },
+    { to: "/painel/clientes", label: "Painel clientes", icon: "clock", show: canAccessApplication },
   ];
   const pageTitle =
     [...navigationItems]
@@ -66,7 +57,7 @@ function AppLayout() {
 
         <div className="dashboard-mini">
           <span className="eyebrow">Sessao ativa</span>
-          <strong>{roleLabel[user?.perfil] || user?.perfil}</strong>
+          <strong>{getRoleLabel(user?.perfil) || user?.perfil}</strong>
           <p>{displayName}</p>
         </div>
 
@@ -103,16 +94,13 @@ function AppLayout() {
             >
               <AppIcon name="menu" />
             </button>
-            <button type="button" className="icon-button">
-              <AppIcon name="bell" />
-            </button>
             <div className="topbar-user">
               <span className="topbar-avatar">
                 <AppIcon name="user" size={18} />
               </span>
               <div>
                 <strong>{displayName}</strong>
-                <small>{roleLabel[user?.perfil] || user?.perfil}</small>
+                <small>{getRoleLabel(user?.perfil) || user?.perfil}</small>
               </div>
             </div>
           </div>
