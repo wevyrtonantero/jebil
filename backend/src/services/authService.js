@@ -12,6 +12,8 @@ const loginAliasMap = {
   oficina: [process.env.SEED_OFICINA_EMAIL, "oficina@jebil.local"],
   orcamentista: [process.env.SEED_ORCAMENTISTA_EMAIL, process.env.SEED_SUPERVISAO_EMAIL, "orcamentista@jebil.local", "supervisao@jebil.local"],
   supervisao: [process.env.SEED_SUPERVISAO_EMAIL, process.env.SEED_ORCAMENTISTA_EMAIL, "supervisao@jebil.local", "orcamentista@jebil.local"],
+  operacao: [process.env.SEED_OPERACAO_EMAIL, "operacaoo"],
+  operacaoo: [process.env.SEED_OPERACAO_EMAIL, "operacaoo"],
 };
 
 function resolveLoginCandidates(email) {

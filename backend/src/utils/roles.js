@@ -5,11 +5,13 @@ const roleAliases = Object.freeze({
   OFICINA: "OFICINA",
   ORCAMENTISTA: "SUPERVISAO",
   SUPERVISAO: "SUPERVISAO",
+  OPERACAO: "OPERACAO",
 });
 
 const perfisDiretoria = Object.freeze(["DIRETORIA"]);
 const perfisAplicacao = Object.freeze(["DIRETORIA", "RECEPCAO", "OFICINA", "SUPERVISAO"]);
-const perfisGerenciadosPorDiretoria = Object.freeze(["RECEPCAO", "OFICINA", "SUPERVISAO"]);
+const perfisOperacao = Object.freeze(["DIRETORIA", "RECEPCAO", "OFICINA", "SUPERVISAO", "OPERACAO"]);
+const perfisGerenciadosPorDiretoria = Object.freeze(["RECEPCAO", "OFICINA", "SUPERVISAO", "OPERACAO"]);
 
 function normalizeRole(role) {
   const normalizedRole = String(role || "").trim().toUpperCase();
@@ -43,5 +45,6 @@ module.exports = {
   buildRoleLookupCandidates,
   perfisDiretoria,
   perfisAplicacao,
+  perfisOperacao,
   perfisGerenciadosPorDiretoria,
 };

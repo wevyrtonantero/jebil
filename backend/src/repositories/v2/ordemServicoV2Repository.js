@@ -22,6 +22,38 @@ function baseSelect(trx = db) {
         WHERE fotos_entrada.ordem_servico_id = ordens_servico.id
           AND fotos_entrada.excluido_em IS NULL
       ) as fotos_entrada_count`),
+      trx.raw(`(
+        SELECT orcamentos.numero_externo
+        FROM orcamentos
+        WHERE orcamentos.ordem_servico_id = ordens_servico.id
+        ORDER BY orcamentos.versao_numero DESC, orcamentos.id DESC
+        LIMIT 1
+      ) as numero_externo`),
+      trx.raw(`(
+        SELECT COALESCE(SUM(
+          CASE
+            WHEN itens_ordem_servico.status_item <> 'CANCELADO'
+             AND LOWER(TRIM(COALESCE(itens_ordem_servico.descricao, ''))) <> 'diagnostico inicial'
+            THEN itens_ordem_servico.valor_total
+            ELSE 0
+          END
+        ), 0)
+        FROM itens_ordem_servico
+        WHERE itens_ordem_servico.ordem_servico_id = ordens_servico.id
+      ) as valor_total_ordem`),
+      trx.raw(`(
+        SELECT COALESCE(SUM(
+          CASE
+            WHEN itens_ordem_servico.status_item <> 'CANCELADO'
+             AND itens_ordem_servico.pagamento_status <> 'PAGO'
+             AND LOWER(TRIM(COALESCE(itens_ordem_servico.descricao, ''))) <> 'diagnostico inicial'
+            THEN itens_ordem_servico.valor_total
+            ELSE 0
+          END
+        ), 0)
+        FROM itens_ordem_servico
+        WHERE itens_ordem_servico.ordem_servico_id = ordens_servico.id
+      ) as valor_pendente_ordem`),
     );
 }
 

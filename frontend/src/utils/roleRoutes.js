@@ -15,6 +15,10 @@ function getDefaultRouteByRole(perfil) {
     return "/recepcao";
   }
 
+  if (normalizedRole === "OPERACAO") {
+    return "/v2/operacao";
+  }
+
   return "/dashboard";
 }
 

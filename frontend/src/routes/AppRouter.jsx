@@ -18,7 +18,7 @@ import ProntuarioV2Page from "../pages/ProntuarioV2Page";
 import AccessDeniedPage from "../pages/AccessDeniedPage";
 import NotFoundPage from "../pages/NotFoundPage";
 import { getDefaultRouteByRole } from "../utils/roleRoutes";
-import { APP_ACCESS_ROLES, DIRECTOR_ROLES } from "../utils/roles";
+import { APP_ACCESS_ROLES, DIRECTOR_ROLES, OPERATION_ACCESS_ROLES } from "../utils/roles";
 import { useAuth } from "../hooks/useAuth";
 
 function HomeRedirect() {
@@ -59,9 +59,12 @@ function AppRouter() {
                   <Route path="/introducao" element={<Navigate to="/recepcao" replace />} />
                   <Route path="/v2/recepcao" element={<Navigate to="/recepcao" replace />} />
                   <Route path="/oficina" element={<OficinaAdminPage />} />
-                  <Route path="/v2/operacao" element={<OperacaoV2Page />} />
                   <Route path="/v2/prontuario" element={<ProntuarioV2Page />} />
                   <Route path="/v2/orcamentos" element={<OrcamentistaV2Page />} />
+                </Route>
+
+                <Route element={<RoleRoute allowedRoles={OPERATION_ACCESS_ROLES} />}>
+                  <Route path="/v2/operacao" element={<OperacaoV2Page />} />
                 </Route>
 
               </Route>

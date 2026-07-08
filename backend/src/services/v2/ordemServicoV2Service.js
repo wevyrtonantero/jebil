@@ -666,10 +666,7 @@ async function recalculateOrdemServicoAggregate(trx, ordemServicoId, currentUser
       canceladaEm: ordemServicoAtual.cancelada_em,
     },
   );
-  const novoStatus =
-    statusCalculado === "PRONTA_PARA_RETIRADA" && isAtendimentoRapidoOrdem(ordemServicoAtual, items)
-      ? "ARQUIVADA"
-      : statusCalculado;
+  const novoStatus = statusCalculado;
 
   const mudouStatus = novoStatus !== ordemServicoAtual.status_geral;
   const mudouPrioridade = novaPrioridade !== ordemServicoAtual.prioridade_agregada;
@@ -1511,6 +1508,29 @@ async function confirmarRetirada(ordemServicoId, currentUser) {
       statusNovo: "FINALIZADA",
       observacao: "Retirada confirmada pela recepcao.",
     });
+
+    if (ordem.legado_atendimento_id) {
+      const atendimento = await atendimentoRepository.findById(ordem.legado_atendimento_id, trx);
+
+      if (atendimento && !["FINALIZADO", "CANCELADO"].includes(atendimento.status)) {
+        await atendimentoRepository.updateFields(trx, atendimento.id, {
+          status: "FINALIZADO",
+          servico_concluido_em: atendimento.servico_concluido_em || db.fn.now(),
+          liberado_retirada_em: atendimento.liberado_retirada_em || db.fn.now(),
+          retirada_confirmada_em: atendimento.retirada_confirmada_em || db.fn.now(),
+          finalizado_em: atendimento.finalizado_em || db.fn.now(),
+        });
+
+        await registrarHistorico(trx, {
+          atendimentoId: atendimento.id,
+          usuarioId: currentUser.id,
+          acao: "RETIRADA_CONFIRMADA",
+          statusAnterior: atendimento.status,
+          statusNovo: "FINALIZADO",
+          observacao: "Retirada confirmada pela recepcao no fluxo V2.",
+        });
+      }
+    }
 
     return loadOrdemServicoBundle(ordemServicoId, trx);
   });

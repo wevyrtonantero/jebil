@@ -12,7 +12,6 @@ import {
   registrarPrevisaoPecaV2,
   registrarComunicacaoWhatsAppV2,
   retomarItemDaPecaV2,
-  updateItemPagamentoV2,
   updateItemStatusV2,
 } from "../services/ordemServicoV2Service";
 import { formatPlate } from "../utils/formatters";
@@ -139,6 +138,33 @@ function getOperationalItems(order) {
   const items = (order?.items || []).filter((item) => !["CANCELADO"].includes(item.status_item));
   const nonDiagnosticItems = items.filter((item) => !isDiagnosticPlaceholderItem(item));
   return nonDiagnosticItems.length ? nonDiagnosticItems : items;
+}
+
+function isAtendimentoRapido(order) {
+  if (order?.legado_atendimento_id) {
+    return true;
+  }
+
+  const itensValidos = (order?.items || []).filter((item) => item.status_item !== "CANCELADO");
+
+  return (
+    !String(order?.queixa_principal || "").trim() &&
+    itensValidos.length > 0 &&
+    itensValidos.every((item) => Boolean(item.execucao_direta) && !Boolean(item.exige_diagnostico))
+  );
+}
+
+function getPendingPaymentTotal(order) {
+  return getOperationalItems(order)
+    .filter((item) => item.pagamento_status !== "PAGO")
+    .reduce((total, item) => total + Number(item.valor_total || 0), 0);
+}
+
+function toMoney(value) {
+  return Number(value || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function getDiagnosticItem(order) {
@@ -431,26 +457,6 @@ function OperacaoV2Page() {
     return detail;
   }
 
-  async function handleTogglePagamento(item) {
-    if (!selectedOrder) {
-      return;
-    }
-
-    setBusy(true);
-    setError("");
-
-    try {
-      const nextStatus = item.pagamento_status === "PAGO" ? "PENDENTE" : "PAGO";
-      await updateItemPagamentoV2(selectedOrder.id, item.id, nextStatus);
-      await refreshSelectedOrder(selectedOrder.id);
-      setFeedback(`Pagamento alterado para ${nextStatus}.`);
-    } catch (requestError) {
-      setError(requestError?.response?.data?.message || "Nao foi possivel alterar o pagamento.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleMarcarPronto(item) {
     if (item.status_item === "EM_EXECUCAO") {
       await updateItemStatusV2(selectedOrder.id, item.id, "CONCLUIDO");
@@ -487,12 +493,24 @@ function OperacaoV2Page() {
       }
 
       const ordemAtualizada = await getOrdemServicoV2(selectedOrder.id);
+      const pendingAmount = getPendingPaymentTotal(ordemAtualizada);
+      const isQuickService = isAtendimentoRapido(ordemAtualizada);
+
       setOrdens((current) => current.map((ordem) => (ordem.id === ordemAtualizada.id ? ordemAtualizada : ordem)));
       setDetailOpen(false);
       setSelectedOrder(null);
+
+      if (isQuickService && pendingAmount > 0) {
+        window.alert("Servico rapido finalizado.\nOrientar o cliente a fazer o pagamento na recepcao.");
+      }
+
       setFeedback(
         ordemAtualizada.status_geral === "PRONTA_PARA_RETIRADA"
-          ? "Moto finalizada e enviada para motos prontas."
+          ? isQuickService
+            ? pendingAmount > 0
+              ? "Servico rapido finalizado e enviado para a recepcao. Oriente o cliente a fazer o pagamento na recepcao."
+              : "Servico rapido finalizado e enviado para a recepcao. Pagamento confirmado."
+            : "Moto finalizada e enviada para motos prontas."
           : "Moto finalizada com sucesso.",
       );
     } catch (requestError) {
@@ -990,16 +1008,6 @@ function OperacaoV2Page() {
                         ) : null}
                       </div>
                       <div className="row-actions operacao-service-actions">
-                        <button
-                          type="button"
-                          className={`icon-button operacao-payment-icon ${item.pagamento_status === "PAGO" ? "is-paid" : "is-pending"}`}
-                          onClick={() => void handleTogglePagamento(item)}
-                          disabled={busy}
-                          aria-label={item.pagamento_status === "PAGO" ? "Marcar como pendente" : "Marcar como pago"}
-                          title={item.pagamento_status === "PAGO" ? "Pagamento confirmado" : "Pagamento pendente"}
-                        >
-                          <AppIcon name="money" size={18} />
-                        </button>
                         <button
                           type="button"
                           className="icon-button operacao-action-icon"

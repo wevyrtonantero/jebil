@@ -128,7 +128,28 @@ function getNomeCurto(nome = "") {
 }
 
 function isServicoRapido(ordem) {
-  return !String(ordem.queixa_principal || "").trim();
+  if (ordem?.legado_atendimento_id) {
+    return true;
+  }
+
+  const itensValidos = (ordem?.items || []).filter((item) => item.status_item !== "CANCELADO");
+
+  return (
+    !String(ordem?.queixa_principal || "").trim() &&
+    itensValidos.length > 0 &&
+    itensValidos.every((item) => Boolean(item.execucao_direta) && !Boolean(item.exige_diagnostico))
+  );
+}
+
+function getPendingPaymentTotal(ordem) {
+  return (ordem.items || [])
+    .filter((item) => !["CANCELADO"].includes(item.status_item) && item.descricao !== "Diagnostico inicial")
+    .filter((item) => item.pagamento_status !== "PAGO")
+    .reduce((total, item) => total + Number(item.valor_total || 0), 0);
+}
+
+function getQuickServiceItems(ordem) {
+  return (ordem.items || []).filter((item) => !["CANCELADO"].includes(item.status_item) && item.descricao !== "Diagnostico inicial");
 }
 
 function isAguardandoDiagnostico(ordem) {
@@ -196,7 +217,11 @@ function OficinaAdminPage() {
   const aguardandoPecas = useMemo(
     () =>
       ordens.filter(
-        (ordem) => podeEntrarNaOficina(ordem) && !aguardandoDiagnosticoIds.has(ordem.id) && (ordem.items || []).some((item) => item.status_item === "AGUARDANDO_PECA"),
+        (ordem) =>
+          !isServicoRapido(ordem) &&
+          podeEntrarNaOficina(ordem) &&
+          !aguardandoDiagnosticoIds.has(ordem.id) &&
+          (ordem.items || []).some((item) => item.status_item === "AGUARDANDO_PECA"),
       ),
     [aguardandoDiagnosticoIds, ordens],
   );
@@ -207,6 +232,7 @@ function OficinaAdminPage() {
     () =>
       ordens.filter(
         (ordem) =>
+          !isServicoRapido(ordem) &&
           podeEntrarNaOficina(ordem) &&
           !aguardandoDiagnosticoIds.has(ordem.id) &&
           !aguardandoPecasIds.has(ordem.id) &&
@@ -217,33 +243,35 @@ function OficinaAdminPage() {
 
   const aguardandoAutorizacaoIds = useMemo(() => new Set(aguardandoAutorizacao.map((ordem) => ordem.id)), [aguardandoAutorizacao]);
 
-  const motosEmExecucao = useMemo(
+  const servicosRapidos = useMemo(
     () =>
-      ordens.filter(
-        (ordem) =>
-          podeEntrarNaOficina(ordem) &&
-          !aguardandoDiagnosticoIds.has(ordem.id) &&
-          !aguardandoPecasIds.has(ordem.id) &&
-          !aguardandoAutorizacaoIds.has(ordem.id) &&
-          (ordem.items || []).some((item) => item.status_item === "EM_EXECUCAO"),
-      ),
-    [aguardandoAutorizacaoIds, aguardandoDiagnosticoIds, aguardandoPecasIds, ordens],
+      ordens
+        .filter(
+          (ordem) =>
+            isServicoRapido(ordem) &&
+            podeEntrarNaOficina(ordem) &&
+            (ordem.items || []).some((item) => !["CONCLUIDO", "CANCELADO"].includes(item.status_item)),
+        )
+        .sort((left, right) => {
+          const leftTime = parseSystemDate(left.aberta_em)?.getTime() || Number.MAX_SAFE_INTEGER;
+          const rightTime = parseSystemDate(right.aberta_em)?.getTime() || Number.MAX_SAFE_INTEGER;
+          return leftTime - rightTime || Number(left.id) - Number(right.id);
+        }),
+    [ordens],
   );
-
-  const motosEmExecucaoIds = useMemo(() => new Set(motosEmExecucao.map((ordem) => ordem.id)), [motosEmExecucao]);
 
   const filaAtendimento = useMemo(
     () =>
       ordens.filter(
         (ordem) =>
+          !isServicoRapido(ordem) &&
           podeEntrarNaOficina(ordem) &&
           !aguardandoDiagnosticoIds.has(ordem.id) &&
           !aguardandoPecasIds.has(ordem.id) &&
           !aguardandoAutorizacaoIds.has(ordem.id) &&
-          !motosEmExecucaoIds.has(ordem.id) &&
           (ordem.items || []).some((item) => item.status_item === "PRONTO_PARA_EXECUTAR"),
       ),
-    [aguardandoAutorizacaoIds, aguardandoDiagnosticoIds, aguardandoPecasIds, motosEmExecucaoIds, ordens],
+    [aguardandoAutorizacaoIds, aguardandoDiagnosticoIds, aguardandoPecasIds, ordens],
   );
 
   return (
@@ -422,38 +450,61 @@ function OficinaAdminPage() {
           </div>
         </div>
 
-        <div className="board-column workshop-execucao-column">
+        <div className="board-column workshop-rapido-column">
           <div className="board-title">
             <div>
-              <h2>Motos em execucao</h2>
+              <h2>Servico rapido</h2>
             </div>
             <div className="queue-summary">
-              <span className="summary-pill strong">{motosEmExecucao.length}</span>
+              <span className="summary-pill strong">{servicosRapidos.length}</span>
             </div>
           </div>
 
           <div className="office-queue-list">
-            {motosEmExecucao.map((ordem) => (
-              <article className="queue-card office-queue-card office-execucao-card" key={ordem.id}>
-                <div className="office-queue-head">
-                  <div className="office-queue-identification">
-                    <div>
-                      <strong>{getNomeCurto(ordem.cliente_nome)}</strong>
-                      <p>
-                        {ordem.motocicleta_modelo}
-                        {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
-                      </p>
+            {servicosRapidos.map((ordem) => {
+              const pendingAmount = getPendingPaymentTotal(ordem);
+              const quickItems = getQuickServiceItems(ordem);
+
+              return (
+                <article className="queue-card office-queue-card office-execucao-card" key={ordem.id}>
+                  <div className="office-queue-head">
+                    <div className="office-queue-identification">
+                      <div>
+                        <strong>{getNomeCurto(ordem.cliente_nome)}</strong>
+                        <p>
+                          {ordem.motocicleta_modelo}
+                          {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="office-queue-tools">
+                      {isAtendimentoPrioritario(ordem) ? <span className="office-priority-pill">Prioritario</span> : null}
                     </div>
                   </div>
-                  <div className="office-queue-tools">
-                    {isAtendimentoPrioritario(ordem) ? <span className="office-priority-pill">Prioritario</span> : null}
-                  </div>
-                </div>
 
-                <small>{getResumoItens(ordem) || "Sem itens informados."}</small>
-              </article>
-            ))}
-            {motosEmExecucao.length === 0 ? <div className="empty-state">Nenhuma moto em execucao agora.</div> : null}
+                  {quickItems.length ? (
+                    <div className="office-quick-meta">
+                      {quickItems.map((item) => (
+                        <span className="office-quick-service-line" key={item.id}>
+                          <span
+                            className={`office-quick-payment-symbol ${
+                              item.pagamento_status === "PAGO" ? "office-quick-payment-paid" : "office-quick-payment-pending"
+                            }`}
+                            title={item.pagamento_status === "PAGO" ? "Pagamento confirmado" : "Pagamento pendente"}
+                          >
+                            $
+                          </span>
+                          <span>{item.descricao}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <small>Sem itens informados.</small>
+                  )}
+                </article>
+              );
+            })}
+            {servicosRapidos.length === 0 ? <div className="empty-state">Nenhum servico rapido na oficina agora.</div> : null}
           </div>
         </div>
       </div>

@@ -1202,7 +1202,7 @@ function ProntuarioV2Page() {
                           <tr>
                             <th>Servico</th>
                             <th>Data do servico</th>
-                            <th>Executado ha</th>
+                            <th>Responsavel</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1213,7 +1213,7 @@ function ProntuarioV2Page() {
                                 {service.observacao ? <small>{service.observacao}</small> : null}
                               </td>
                               <td>{formatReportDateTime(service.dataServico)}</td>
-                              <td>{formatDaysSinceLabel(service.dataServico, clockNow)}</td>
+                              <td>{service.executadoPor || "Nao informado"}</td>
                             </tr>
                           ))}
                         </tbody>

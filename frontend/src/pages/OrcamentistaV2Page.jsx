@@ -481,7 +481,6 @@ function buildWhatsappPdfMessage(ordem, orcamento) {
     `Segue o PDF do orcamento da moto ${ordem?.motocicleta_modelo || ""} ${ordem?.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}`.trim(),
     ordem?.data_prometida ? `Prazo de entrega: ${formatDateLabel(ordem.data_prometida)}` : null,
     pdfLink ? `PDF: ${pdfLink}` : null,
-    `Total: R$ ${toMoney(orcamento?.valor_total || 0)}`,
   ]
     .filter(Boolean)
     .join("\n");

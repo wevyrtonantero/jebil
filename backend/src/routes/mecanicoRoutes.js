@@ -13,20 +13,19 @@ const { authMiddleware } = require("../middlewares/authMiddleware");
 const { roleMiddleware } = require("../middlewares/roleMiddleware");
 const { uploadMecanicoFoto } = require("../config/upload");
 const { uploadErrorMiddleware } = require("../middlewares/uploadErrorMiddleware");
-const { perfisAplicacao } = require("../utils/roles");
+const { perfisAplicacao, perfisOperacao } = require("../utils/roles");
 
 const router = Router();
 
 router.use(authMiddleware);
-router.use(roleMiddleware(perfisAplicacao));
 
-router.get("/", listMecanicos);
-router.get("/:id", getMecanico);
-router.post("/", createMecanico);
-router.put("/:id", updateMecanico);
-router.patch("/:id/status", updateMecanicoStatus);
-router.patch("/:id/disponibilidade", updateMecanicoDisponibilidade);
-router.post("/:id/foto", uploadMecanicoFoto.single("foto"), uploadErrorMiddleware, uploadFoto);
-router.delete("/:id/foto", deleteFoto);
+router.get("/", roleMiddleware(perfisOperacao), listMecanicos);
+router.get("/:id", roleMiddleware(perfisAplicacao), getMecanico);
+router.post("/", roleMiddleware(perfisAplicacao), createMecanico);
+router.put("/:id", roleMiddleware(perfisAplicacao), updateMecanico);
+router.patch("/:id/status", roleMiddleware(perfisAplicacao), updateMecanicoStatus);
+router.patch("/:id/disponibilidade", roleMiddleware(perfisAplicacao), updateMecanicoDisponibilidade);
+router.post("/:id/foto", roleMiddleware(perfisAplicacao), uploadMecanicoFoto.single("foto"), uploadErrorMiddleware, uploadFoto);
+router.delete("/:id/foto", roleMiddleware(perfisAplicacao), deleteFoto);
 
 module.exports = router;

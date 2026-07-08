@@ -8,6 +8,7 @@ const sectorLabels = {
   RECEPCAO: "Recepcao",
   OFICINA: "Oficina",
   SUPERVISAO: "Supervisao",
+  OPERACAO: "Operacao",
 };
 
 function PasswordManagementPage() {
@@ -22,6 +23,7 @@ function PasswordManagementPage() {
     RECEPCAO: { novaSenha: "", confirmarSenha: "" },
     OFICINA: { novaSenha: "", confirmarSenha: "" },
     SUPERVISAO: { novaSenha: "", confirmarSenha: "" },
+    OPERACAO: { novaSenha: "", confirmarSenha: "" },
   });
   const [savingKey, setSavingKey] = useState("");
   const [feedback, setFeedback] = useState({
@@ -180,7 +182,7 @@ function PasswordManagementPage() {
             <article className="detail-row password-card">
               <div className="password-card-header">
                 <strong>Senhas dos setores</strong>
-                <span className="helper-copy">Recepcao, oficina e supervisao</span>
+                <span className="helper-copy">Recepcao, oficina, supervisao e operacao</span>
               </div>
 
               <div className="password-sector-stack">

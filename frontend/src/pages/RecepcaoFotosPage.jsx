@@ -419,7 +419,7 @@ function RecepcaoFotosPage() {
       setPendingFiles([]);
       setSearchParams({});
       await loadOrdens();
-      navigate("/oficina");
+      navigate("/recepcao");
     } catch (requestError) {
       setFeedback(requestError?.response?.data?.message || "Nao foi possivel finalizar o cadastro.");
     } finally {

@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import AppIcon from "../components/common/AppIcon";
-import { APP_ACCESS_ROLES, DIRECTOR_ROLES, getRoleLabel, hasAllowedRole } from "../utils/roles";
+import { APP_ACCESS_ROLES, DIRECTOR_ROLES, OPERATION_ACCESS_ROLES, getRoleLabel, hasAllowedRole } from "../utils/roles";
 
 function AppLayout() {
   const { user, logout } = useAuth();
@@ -10,6 +10,7 @@ function AppLayout() {
   const [menuHidden, setMenuHidden] = useState(false);
   const canAccessDashboard = hasAllowedRole(user?.perfil, DIRECTOR_ROLES);
   const canAccessApplication = hasAllowedRole(user?.perfil, APP_ACCESS_ROLES);
+  const canAccessOperation = hasAllowedRole(user?.perfil, OPERATION_ACCESS_ROLES);
   const isTvRoute = location.pathname === "/oficina";
   const isImmersiveOperationRoute = location.pathname === "/v2/operacao";
   const isPhotoCaptureRoute = location.pathname === "/recepcao/fotos";
@@ -19,7 +20,7 @@ function AppLayout() {
     { to: "/recepcao", label: "Recepcao", icon: "reception", show: canAccessApplication },
     { to: "/recepcao/fotos", label: "Fotos", icon: "camera", show: canAccessApplication },
     { to: "/oficina", label: "Oficina", icon: "workshop", show: canAccessApplication },
-    { to: "/v2/operacao", label: "Operacao", icon: "workshop", show: canAccessApplication },
+    { to: "/v2/operacao", label: "Operacao", icon: "workshop", show: canAccessOperation },
     { to: "/v2/orcamentos", label: "Orcamentos", icon: "money", show: canAccessApplication },
     { to: "/v2/prontuario", label: "Prontuario", icon: "motorcycle", show: canAccessApplication },
     { to: "/mecanicos", label: "Mecanicos", icon: "mechanic", show: canAccessApplication },

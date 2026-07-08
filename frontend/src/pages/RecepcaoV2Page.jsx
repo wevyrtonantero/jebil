@@ -11,9 +11,11 @@ import {
 import {
   confirmarRetiradaV2,
   createOrdemServicoV2,
+  getOrdemServicoV2,
   listItemSuggestionsV2,
   listOrdensServicoV2,
   registrarComunicacaoWhatsAppV2,
+  updateItemPagamentoV2,
   uploadFotosEntradaV2,
 } from "../services/ordemServicoV2Service";
 import Modal from "../components/common/Modal";
@@ -139,6 +141,25 @@ function formatReadyTime(value) {
   }).format(new Date(value));
 }
 
+function formatExternalNumber(value = "") {
+  const normalized = String(value || "").replace(/^#+/, "").trimStart();
+  return normalized ? `#${normalized}` : "";
+}
+
+function isAtendimentoRapido(ordem) {
+  if (ordem?.legado_atendimento_id) {
+    return true;
+  }
+
+  const itensValidos = (ordem?.items || []).filter((item) => item.status_item !== "CANCELADO");
+
+  return (
+    !String(ordem?.queixa_principal || "").trim() &&
+    itensValidos.length > 0 &&
+    itensValidos.every((item) => Boolean(item.execucao_direta) && !Boolean(item.exige_diagnostico))
+  );
+}
+
 function buildReadyWhatsappMessage(ordem) {
   const moto = [
     ordem.motocicleta_marca,
@@ -153,6 +174,7 @@ function buildReadyWhatsappMessage(ordem) {
   return [
     `Ola, ${ordem.cliente_nome}.`,
     `Sua motocicleta ${moto} esta pronta para retirada.`,
+    "Horario: seg. a sex. 07:00-20:00 | sab. 08:00-13:00 | dom. fechado.",
     "Estamos a disposicao.",
   ].join("\n");
 }
@@ -212,7 +234,12 @@ function RecepcaoV2Page() {
 
     try {
       const data = await listOrdensServicoV2({ status_geral: "PRONTA_PARA_RETIRADA" });
-      setReadyOrders(data.filter((ordem) => !ordem.legado_atendimento_id));
+      const paidQuickOrders = data.filter((ordem) => isAtendimentoRapido(ordem) && Number(ordem.valor_pendente_ordem || 0) <= 0);
+      const visibleOrders = data.filter((ordem) => !(isAtendimentoRapido(ordem) && Number(ordem.valor_pendente_ordem || 0) <= 0));
+
+      setReadyOrders(visibleOrders);
+
+      await Promise.allSettled(paidQuickOrders.map((ordem) => confirmarRetiradaV2(ordem.id)));
     } catch {
       setReadyFeedback("Nao foi possivel carregar as motos aguardando retirada.");
     } finally {
@@ -279,6 +306,36 @@ function RecepcaoV2Page() {
       setReadyFeedback(`${ordem.cliente_nome} marcado como retirado.`);
     } catch (requestError) {
       setReadyFeedback(requestError?.response?.data?.message || "Nao foi possivel confirmar a retirada.");
+    } finally {
+      setReadyActionId(null);
+    }
+  }
+
+  async function handleConfirmQuickPayment(ordem) {
+    const confirmed = window.confirm(`Confirmar pagamento de R$ ${toMoney(ordem.valor_pendente_ordem || 0)} e arquivar esta OS?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setReadyActionId(ordem.id);
+    setReadyFeedback("");
+
+    try {
+      const detail = await getOrdemServicoV2(ordem.id);
+      const pendingItems = (detail.items || []).filter(
+        (item) =>
+          item.pagamento_status !== "PAGO" &&
+          item.status_item !== "CANCELADO" &&
+          String(item.descricao || "").trim().toLowerCase() !== "diagnostico inicial",
+      );
+
+      await Promise.all(pendingItems.map((item) => updateItemPagamentoV2(detail.id, item.id, "PAGO")));
+      await confirmarRetiradaV2(detail.id);
+      setReadyOrders((current) => current.filter((item) => Number(item.id) !== Number(ordem.id)));
+      setReadyFeedback(`${ordem.cliente_nome} pago e arquivado.`);
+    } catch (requestError) {
+      setReadyFeedback(requestError?.response?.data?.message || "Nao foi possivel confirmar o pagamento.");
     } finally {
       setReadyActionId(null);
     }
@@ -825,40 +882,65 @@ function RecepcaoV2Page() {
           </div>
 
           <div className="recepcao-ready-list">
-            {readyOrders.map((ordem) => (
-              <article className="recepcao-ready-card" key={ordem.id}>
-                <div>
-                  <strong>{ordem.cliente_nome}</strong>
-                  <p>
-                    {ordem.motocicleta_modelo}
-                    {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
-                  </p>
-                  <small>Pronta desde {formatReadyTime(ordem.pronta_retirada_em || ordem.atualizado_em)}</small>
-                </div>
-                <div className="recepcao-ready-actions">
-                  <button
-                    type="button"
-                    className="icon-button recepcao-whatsapp-action"
-                    onClick={() => void handleNotifyReady(ordem)}
-                    disabled={readyActionId === ordem.id}
-                    aria-label="Avisar cliente pelo WhatsApp"
-                    title="Avisar cliente pelo WhatsApp"
-                  >
-                    <AppIcon name="whatsapp" size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button ready-withdraw-button"
-                    onClick={() => void handleConfirmWithdrawal(ordem)}
-                    disabled={readyActionId === ordem.id}
-                    aria-label="Confirmar retirada"
-                    title="Confirmar retirada"
-                  >
-                    <AppIcon name="check" size={18} />
-                  </button>
-                </div>
-              </article>
-            ))}
+            {readyOrders.map((ordem) => {
+              const externalNumber = formatExternalNumber(ordem.numero_externo);
+              const pendingAmount = Number(ordem.valor_pendente_ordem || 0);
+              const isQuickService = isAtendimentoRapido(ordem);
+
+              return (
+                <article className="recepcao-ready-card" key={ordem.id}>
+                  <div className="recepcao-ready-copy">
+                    <strong>{ordem.cliente_nome}</strong>
+                    <p>
+                      {ordem.motocicleta_modelo}
+                      {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
+                      {externalNumber ? ` | ${externalNumber}` : ""}
+                    </p>
+                    <div className="recepcao-ready-meta">
+                      <small>Pronta desde {formatReadyTime(ordem.pronta_retirada_em || ordem.atualizado_em)}</small>
+                      {isQuickService && pendingAmount > 0 ? (
+                        <strong className="recepcao-payment-amount">R$ {toMoney(pendingAmount)}</strong>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="recepcao-ready-actions">
+                    <button
+                      type="button"
+                      className="icon-button recepcao-whatsapp-action"
+                      onClick={() => void handleNotifyReady(ordem)}
+                      disabled={readyActionId === ordem.id}
+                      aria-label="Avisar cliente pelo WhatsApp"
+                      title="Avisar cliente pelo WhatsApp"
+                    >
+                      <AppIcon name="whatsapp" size={18} />
+                    </button>
+                    {isQuickService && pendingAmount > 0 ? (
+                      <button
+                        type="button"
+                        className="recepcao-paid-button"
+                        onClick={() => void handleConfirmQuickPayment(ordem)}
+                        disabled={readyActionId === ordem.id}
+                        title="Confirmar pagamento e arquivar"
+                      >
+                        <AppIcon name="money" size={16} />
+                        Pago
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="icon-button ready-withdraw-button"
+                        onClick={() => void handleConfirmWithdrawal(ordem)}
+                        disabled={readyActionId === ordem.id}
+                        aria-label="Confirmar retirada"
+                        title="Confirmar retirada"
+                      >
+                        <AppIcon name="check" size={18} />
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
 
             {!readyLoading && readyOrders.length === 0 ? <div className="empty-state">Nenhuma moto aguardando retirada.</div> : null}
             {readyLoading ? <div className="empty-state">Carregando retiradas...</div> : null}

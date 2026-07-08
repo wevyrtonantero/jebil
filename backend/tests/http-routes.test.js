@@ -187,6 +187,28 @@ test("GET /api/clientes returns paginated payload for recepcao", async () => {
   assert.equal(response.body.meta.total, 1);
 });
 
+test("GET /api/clientes denies OPERACAO profile", async () => {
+  const token = signAccessToken({
+    sub: 18,
+    perfil: "OPERACAO",
+    email: "operacaoo",
+  });
+
+  usuarioRepository.findById = async () => ({
+    id: 18,
+    nome: "Operacao",
+    email: "operacaoo",
+    perfil: "OPERACAO",
+    ativo: true,
+  });
+
+  const response = await request(app)
+    .get("/api/clientes")
+    .set("Authorization", `Bearer ${token}`);
+
+  assert.equal(response.statusCode, 403);
+});
+
 test("GET /api/paineis/clientes omits sensitive data", async () => {
   atendimentoRepository.list = async () => [
     {
@@ -253,6 +275,31 @@ test("GET /api/v2/ordens-servico allows SUPERVISAO profile", async () => {
 
   const response = await request(app)
     .get("/api/v2/ordens-servico")
+    .set("Authorization", `Bearer ${token}`);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.success, true);
+});
+
+test("GET /api/v2/ordens-servico/operacional/lista allows OPERACAO profile", async () => {
+  const token = signAccessToken({
+    sub: 1010,
+    perfil: "OPERACAO",
+    email: "operacaoo",
+  });
+
+  usuarioRepository.findById = async () => ({
+    id: 1010,
+    nome: "Operacao",
+    email: "operacaoo",
+    perfil: "OPERACAO",
+    ativo: true,
+  });
+
+  ordemServicoV2Service.listOperacional = async () => [];
+
+  const response = await request(app)
+    .get("/api/v2/ordens-servico/operacional/lista")
     .set("Authorization", `Bearer ${token}`);
 
   assert.equal(response.statusCode, 200);
