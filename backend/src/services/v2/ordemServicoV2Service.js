@@ -1304,6 +1304,38 @@ async function listOperacional(limit = 30) {
   return Promise.all(ordens.map((ordem) => loadOrdemServicoBundle(ordem.id)));
 }
 
+async function reordenarControlePatio(ordemIds) {
+  const data = await db.transaction(async (trx) => {
+    if (ordemIds.length) {
+      const ordensExistentes = await trx("ordens_servico").select("id").whereIn("id", ordemIds);
+
+      if (ordensExistentes.length !== ordemIds.length) {
+        throw new ApiError(404, "Uma ou mais OS da fila nao foram encontradas.");
+      }
+    }
+
+    await trx("ordens_servico").whereNotNull("ordem_patio").update({
+      ordem_patio: null,
+      atualizado_em: db.fn.now(),
+    });
+
+    for (const [index, ordemServicoId] of ordemIds.entries()) {
+      await trx("ordens_servico").where({ id: ordemServicoId }).update({
+        ordem_patio: index + 1,
+        atualizado_em: db.fn.now(),
+      });
+    }
+
+    return {
+      ordem_ids: ordemIds,
+      total: ordemIds.length,
+    };
+  });
+
+  emitV2Updated(null, { tipo: "controle_patio_reordenado" });
+  return data;
+}
+
 async function listItemSuggestions(query = "", limit = 20) {
   const normalizedQuery = String(query || "").trim();
   const safeLimit = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 50) : 20;
@@ -2022,6 +2054,7 @@ module.exports = {
   adicionarItensSugeridosDiagnostico,
   getProntuarioByMotocicletaId,
   listOperacional,
+  reordenarControlePatio,
   listItemSuggestions,
   addFotosEntrada,
   finalizarCadastroFotos,

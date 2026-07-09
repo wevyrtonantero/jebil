@@ -20,6 +20,7 @@ function AppLayout() {
     { to: "/recepcao", label: "Recepcao", icon: "reception", show: canAccessApplication },
     { to: "/recepcao/fotos", label: "Fotos", icon: "camera", show: canAccessApplication },
     { to: "/oficina", label: "Oficina", icon: "workshop", show: canAccessApplication },
+    { to: "/controle-patio", label: "Controle de Patio", icon: "drag", show: canAccessApplication },
     { to: "/v2/operacao", label: "Operacao", icon: "workshop", show: canAccessOperation },
     { to: "/v2/orcamentos", label: "Orcamentos", icon: "money", show: canAccessApplication },
     { to: "/v2/prontuario", label: "Prontuario", icon: "motorcycle", show: canAccessApplication },

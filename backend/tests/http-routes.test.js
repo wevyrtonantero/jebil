@@ -48,6 +48,7 @@ const originalOrdemServicoV2Service = {
   adicionarItensSugeridosDiagnostico: ordemServicoV2Service.adicionarItensSugeridosDiagnostico,
   getProntuarioByMotocicletaId: ordemServicoV2Service.getProntuarioByMotocicletaId,
   listOperacional: ordemServicoV2Service.listOperacional,
+  reordenarControlePatio: ordemServicoV2Service.reordenarControlePatio,
 };
 
 test.afterEach(() => {
@@ -79,6 +80,7 @@ test.afterEach(() => {
   ordemServicoV2Service.adicionarItensSugeridosDiagnostico = originalOrdemServicoV2Service.adicionarItensSugeridosDiagnostico;
   ordemServicoV2Service.getProntuarioByMotocicletaId = originalOrdemServicoV2Service.getProntuarioByMotocicletaId;
   ordemServicoV2Service.listOperacional = originalOrdemServicoV2Service.listOperacional;
+  ordemServicoV2Service.reordenarControlePatio = originalOrdemServicoV2Service.reordenarControlePatio;
 });
 
 test("GET /api/health returns expected payload", async () => {
@@ -304,6 +306,59 @@ test("GET /api/v2/ordens-servico/operacional/lista allows OPERACAO profile", asy
 
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.success, true);
+});
+
+test("PATCH /api/v2/ordens-servico/operacional/controle-patio updates queue order", async () => {
+  const token = signAccessToken({
+    sub: 12,
+    perfil: "RECEPCAO",
+    email: "recepcao",
+  });
+
+  usuarioRepository.findById = async () => ({
+    id: 12,
+    nome: "Recepcao",
+    email: "recepcao",
+    perfil: "RECEPCAO",
+    ativo: true,
+  });
+
+  ordemServicoV2Service.reordenarControlePatio = async (ordemIds) => ({
+    ordem_ids: ordemIds,
+    total: ordemIds.length,
+  });
+
+  const response = await request(app)
+    .patch("/api/v2/ordens-servico/operacional/controle-patio")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ ordem_ids: [18, 7, 22] });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.data.ordem_ids, [18, 7, 22]);
+  assert.equal(response.body.data.total, 3);
+});
+
+test("PATCH /api/v2/ordens-servico/operacional/controle-patio rejects OPERACAO profile", async () => {
+  const token = signAccessToken({
+    sub: 1010,
+    perfil: "OPERACAO",
+    email: "operacaoo",
+  });
+
+  usuarioRepository.findById = async () => ({
+    id: 1010,
+    nome: "Operacao",
+    email: "operacaoo",
+    perfil: "OPERACAO",
+    ativo: true,
+  });
+
+  const response = await request(app)
+    .patch("/api/v2/ordens-servico/operacional/controle-patio")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ ordem_ids: [18, 7] });
+
+  assert.equal(response.statusCode, 403);
 });
 
 test("POST /api/v2/ordens-servico allows OFICINA profile", async () => {

@@ -67,7 +67,7 @@ function removeManagedFile(fileUrl) {
 }
 
 async function listExpiredClosedOrders(limit, trx = db) {
-  const retentionMonths = toPositiveNumber(process.env.ORDER_RETENTION_MONTHS, 5);
+  const retentionMonths = toPositiveNumber(process.env.ORDER_RETENTION_MONTHS, 12);
   const cutoff = buildRetentionCutoffDate(retentionMonths);
 
   return trx("ordens_servico")
@@ -86,6 +86,56 @@ async function listExpiredClosedOrders(limit, trx = db) {
     })
     .orderBy("id", "asc")
     .limit(limit);
+}
+
+async function listExpiredOrderPhotos(limit, trx = db) {
+  const retentionMonths = toPositiveNumber(process.env.ORDER_PHOTO_RETENTION_MONTHS, 3);
+  const cutoff = buildRetentionCutoffDate(retentionMonths);
+
+  return trx("fotos_entrada as foto")
+    .innerJoin("ordens_servico as ordem", "ordem.id", "foto.ordem_servico_id")
+    .select("foto.id", "foto.arquivo_url")
+    .whereIn("ordem.status_geral", CLOSED_ORDER_STATUSES)
+    .andWhere(function applyCutoff() {
+      this.where(function finalizedOrders() {
+        this.where("ordem.status_geral", "FINALIZADA")
+          .whereNotNull("ordem.finalizada_em")
+          .where("ordem.finalizada_em", "<=", cutoff);
+      })
+        .orWhere(function archivedOrders() {
+          this.where("ordem.status_geral", "ARQUIVADA")
+            .whereNotNull("ordem.arquivada_em")
+            .where("ordem.arquivada_em", "<=", cutoff);
+        })
+        .orWhere(function cancelledOrders() {
+          this.where("ordem.status_geral", "CANCELADA")
+            .whereNotNull("ordem.cancelada_em")
+            .where("ordem.cancelada_em", "<=", cutoff);
+        });
+    })
+    .orderBy("foto.id", "asc")
+    .limit(limit);
+}
+
+async function deleteOrderPhotosBatch(fotos = []) {
+  if (!fotos.length) {
+    return { deletedPhotos: 0, deletedFiles: 0 };
+  }
+
+  const fotoIds = fotos.map((foto) => Number(foto.id));
+  await db("fotos_entrada").whereIn("id", fotoIds).del();
+
+  let deletedFiles = 0;
+  for (const foto of fotos) {
+    if (removeManagedFile(foto.arquivo_url)) {
+      deletedFiles += 1;
+    }
+  }
+
+  return {
+    deletedPhotos: fotos.length,
+    deletedFiles,
+  };
 }
 
 async function collectOrderAssetUrls(trx, ordemIds) {
@@ -202,8 +252,21 @@ async function deleteClosedOrdersBatch(ordens = []) {
 
 async function runOrderRetentionCleanup() {
   const batchSize = toPositiveNumber(process.env.ORDER_RETENTION_BATCH_SIZE, 25);
+  let totalDeletedPhotos = 0;
   let totalDeletedOrders = 0;
   let totalDeletedFiles = 0;
+
+  while (true) {
+    const expiredPhotos = await listExpiredOrderPhotos(batchSize);
+
+    if (!expiredPhotos.length) {
+      break;
+    }
+
+    const result = await deleteOrderPhotosBatch(expiredPhotos);
+    totalDeletedPhotos += result.deletedPhotos;
+    totalDeletedFiles += result.deletedFiles;
+  }
 
   while (true) {
     const expiredOrders = await listExpiredClosedOrders(batchSize);
@@ -218,6 +281,7 @@ async function runOrderRetentionCleanup() {
   }
 
   return {
+    deletedPhotos: totalDeletedPhotos,
     deletedOrders: totalDeletedOrders,
     deletedFiles: totalDeletedFiles,
   };
@@ -244,9 +308,9 @@ function startOrderRetentionScheduler() {
     try {
       const result = await runOrderRetentionCleanup();
 
-      if (result.deletedOrders || result.deletedFiles) {
+      if (result.deletedPhotos || result.deletedOrders || result.deletedFiles) {
         console.log(
-          `[retencao-os] limpeza concluida: ${result.deletedOrders} OS removidas, ${result.deletedFiles} arquivos apagados.`,
+          `[retencao-os] limpeza concluida: ${result.deletedPhotos} fotos removidas, ${result.deletedOrders} OS removidas, ${result.deletedFiles} arquivos apagados.`,
         );
       }
     } catch (error) {
@@ -268,7 +332,9 @@ function startOrderRetentionScheduler() {
 module.exports = {
   buildRetentionCutoffDate,
   deleteClosedOrdersBatch,
+  deleteOrderPhotosBatch,
   listExpiredClosedOrders,
+  listExpiredOrderPhotos,
   normalizeManagedUploadPath,
   removeManagedFile,
   runOrderRetentionCleanup,

@@ -177,7 +177,30 @@ module.exports = {
   validateCreateDiagnosticoPayload,
   validateConcluirDiagnosticoPayload,
   validateAdicionarItensSugeridosPayload,
+  validateReordenarControlePatioPayload,
 };
+
+function validateReordenarControlePatioPayload(payload) {
+  if (!Array.isArray(payload.ordem_ids)) {
+    throw new ApiError(400, "ordem_ids deve ser uma lista.");
+  }
+
+  if (payload.ordem_ids.length > 200) {
+    throw new ApiError(400, "A fila do patio excede o limite de 200 motos.");
+  }
+
+  const ordemIds = payload.ordem_ids.map((id) => Number(id));
+
+  if (ordemIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new ApiError(400, "ordem_ids contem uma OS invalida.");
+  }
+
+  if (new Set(ordemIds).size !== ordemIds.length) {
+    throw new ApiError(400, "ordem_ids nao pode conter OS duplicada.");
+  }
+
+  return { ordemIds };
+}
 
 function validateUpdateItemStatusPayload(payload) {
   const status = String(payload.status_item || "").trim().toUpperCase();

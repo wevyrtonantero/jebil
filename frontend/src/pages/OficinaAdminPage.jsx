@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listOperacionalV2 } from "../services/ordemServicoV2Service";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
+import { sortPatioQueue } from "../utils/patioQueue";
 
 function getResumoItens(ordem) {
   return (ordem.items || [])
@@ -262,14 +263,16 @@ function OficinaAdminPage() {
 
   const filaAtendimento = useMemo(
     () =>
-      ordens.filter(
-        (ordem) =>
-          !isServicoRapido(ordem) &&
-          podeEntrarNaOficina(ordem) &&
-          !aguardandoDiagnosticoIds.has(ordem.id) &&
-          !aguardandoPecasIds.has(ordem.id) &&
-          !aguardandoAutorizacaoIds.has(ordem.id) &&
-          (ordem.items || []).some((item) => item.status_item === "PRONTO_PARA_EXECUTAR"),
+      sortPatioQueue(
+        ordens.filter(
+          (ordem) =>
+            !isServicoRapido(ordem) &&
+            podeEntrarNaOficina(ordem) &&
+            !aguardandoDiagnosticoIds.has(ordem.id) &&
+            !aguardandoPecasIds.has(ordem.id) &&
+            !aguardandoAutorizacaoIds.has(ordem.id) &&
+            (ordem.items || []).some((item) => item.status_item === "PRONTO_PARA_EXECUTAR"),
+        ),
       ),
     [aguardandoAutorizacaoIds, aguardandoDiagnosticoIds, aguardandoPecasIds, ordens],
   );

@@ -12,6 +12,7 @@ const {
   getProntuarioMotocicletaV2,
   listOperacionalV2,
   listItemSuggestionsV2,
+  reordenarControlePatioV2,
 } = require("../controllers/ordemServicoV2Controller");
 const {
   uploadFotosEntradaV2,
@@ -41,6 +42,7 @@ router.use(authMiddleware);
 router.get("/", roleMiddleware(perfisAplicacao), listOrdensServicoV2);
 router.get("/sugestoes-itens", roleMiddleware(perfisAplicacao), listItemSuggestionsV2);
 router.get("/operacional/lista", roleMiddleware(perfisOperacao), listOperacionalV2);
+router.patch("/operacional/controle-patio", roleMiddleware(perfisAplicacao), reordenarControlePatioV2);
 router.get("/prontuario/motocicletas/:motocicletaId", roleMiddleware(perfisAplicacao), getProntuarioMotocicletaV2);
 router.get("/:id", roleMiddleware(perfisOperacao), getOrdemServicoV2);
 router.post("/", roleMiddleware(perfisAplicacao), createOrdemServicoV2);

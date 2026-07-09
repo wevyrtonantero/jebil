@@ -11,6 +11,7 @@ import MecanicosPage from "../pages/MecanicosPage";
 import RecepcaoV2Page from "../pages/RecepcaoV2Page";
 import RecepcaoFotosPage from "../pages/RecepcaoFotosPage";
 import OficinaAdminPage from "../pages/OficinaAdminPage";
+import ControlePatioPage from "../pages/ControlePatioPage";
 import OperacaoV2Page from "../pages/OperacaoV2Page";
 import OrcamentistaV2Page from "../pages/OrcamentistaV2Page";
 import PasswordManagementPage from "../pages/PasswordManagementPage";
@@ -59,6 +60,7 @@ function AppRouter() {
                   <Route path="/introducao" element={<Navigate to="/recepcao" replace />} />
                   <Route path="/v2/recepcao" element={<Navigate to="/recepcao" replace />} />
                   <Route path="/oficina" element={<OficinaAdminPage />} />
+                  <Route path="/controle-patio" element={<ControlePatioPage />} />
                   <Route path="/v2/prontuario" element={<ProntuarioV2Page />} />
                   <Route path="/v2/orcamentos" element={<OrcamentistaV2Page />} />
                 </Route>

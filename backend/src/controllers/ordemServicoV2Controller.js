@@ -10,6 +10,7 @@ const {
   validateCreateDiagnosticoPayload,
   validateConcluirDiagnosticoPayload,
   validateAdicionarItensSugeridosPayload,
+  validateReordenarControlePatioPayload,
 } = require("../validators/ordemServicoV2Validator");
 
 const listOrdensServicoV2 = asyncHandler(async (req, res) => {
@@ -100,6 +101,12 @@ const listItemSuggestionsV2 = asyncHandler(async (req, res) => {
   sendSuccess(res, data, "Sugestoes de itens V2 carregadas com sucesso.");
 });
 
+const reordenarControlePatioV2 = asyncHandler(async (req, res) => {
+  const payload = validateReordenarControlePatioPayload(req.body);
+  const data = await ordemServicoV2Service.reordenarControlePatio(payload.ordemIds);
+  sendSuccess(res, data, "Ordem do patio atualizada com sucesso.");
+});
+
 module.exports = {
   listOrdensServicoV2,
   getOrdemServicoV2,
@@ -113,4 +120,5 @@ module.exports = {
   getProntuarioMotocicletaV2,
   listOperacionalV2,
   listItemSuggestionsV2,
+  reordenarControlePatioV2,
 };

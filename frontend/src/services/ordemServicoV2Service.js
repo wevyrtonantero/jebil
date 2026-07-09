@@ -12,6 +12,13 @@ async function listOperacionalV2(limit = 30) {
   return response.data.data;
 }
 
+async function reordenarControlePatioV2(ordemIds) {
+  const response = await api.patch("/v2/ordens-servico/operacional/controle-patio", {
+    ordem_ids: ordemIds,
+  });
+  return response.data.data;
+}
+
 async function listItemSuggestionsV2(query = "", limit = 20) {
   const response = await api.get("/v2/ordens-servico/sugestoes-itens", {
     params: { q: query, limit },
@@ -158,6 +165,7 @@ async function getProntuarioMotocicletaV2(motocicletaId) {
 export {
   listOrdensServicoV2,
   listOperacionalV2,
+  reordenarControlePatioV2,
   listItemSuggestionsV2,
   getOrdemServicoV2,
   createOrdemServicoV2,

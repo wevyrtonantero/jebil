@@ -54,6 +54,7 @@ function toOrdemServicoV2Dto(ordemServico, items = []) {
     observacoes_internas: ordemServico.observacoes_internas,
     data_prometida: ordemServico.data_prometida,
     prioridade_agregada: ordemServico.prioridade_agregada,
+    ordem_patio: ordemServico.ordem_patio == null ? null : Number(ordemServico.ordem_patio),
     status_geral: ordemServico.status_geral,
     km_entrada: ordemServico.km_entrada,
     buscar_moto: Boolean(ordemServico.buscar_moto),

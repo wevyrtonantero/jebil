@@ -6,8 +6,17 @@ const {
   normalizeManagedUploadPath,
 } = require("../src/services/orderRetentionService");
 
-test("buildRetentionCutoffDate returns a past date based on retention months", () => {
-  const cutoff = buildRetentionCutoffDate(5);
+test("buildRetentionCutoffDate supports the photo retention period", () => {
+  const cutoff = buildRetentionCutoffDate(3);
+  const now = new Date();
+
+  assert.equal(cutoff instanceof Date, true);
+  assert.equal(Number.isNaN(cutoff.getTime()), false);
+  assert.equal(cutoff.getTime() < now.getTime(), true);
+});
+
+test("buildRetentionCutoffDate supports the order retention period", () => {
+  const cutoff = buildRetentionCutoffDate(12);
   const now = new Date();
 
   assert.equal(cutoff instanceof Date, true);

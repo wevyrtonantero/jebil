@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
+import { useAuth } from "../hooks/useAuth";
 import Modal from "../components/common/Modal";
 import AppIcon from "../components/common/AppIcon";
 import { listMecanicos } from "../services/mecanicoService";
@@ -15,6 +16,7 @@ import {
   updateItemStatusV2,
 } from "../services/ordemServicoV2Service";
 import { formatPlate } from "../utils/formatters";
+import { sortPatioQueue } from "../utils/patioQueue";
 
 const ORCAMENTISTA_WHATSAPP = "+55 11 97454-0115";
 
@@ -231,7 +233,20 @@ function getItemStatusLabel(status = "") {
   return map[status] || status;
 }
 
-function buildDiagnosticoWhatsappMessage(order, diagnosticoTexto, pecasRecomendadas, mecanicoNome) {
+function formatEstimatedServiceTime(periods) {
+  const normalizedPeriods = Math.max(1, Number(periods) || 1);
+  const fullDays = Math.floor(normalizedPeriods / 2);
+  const hasHalfPeriod = normalizedPeriods % 2 === 1;
+
+  if (!fullDays) {
+    return "Meio periodo";
+  }
+
+  const daysLabel = `${fullDays} ${fullDays === 1 ? "dia" : "dias"}`;
+  return hasHalfPeriod ? `${daysLabel} e meio` : daysLabel;
+}
+
+function buildDiagnosticoWhatsappMessage(order, diagnosticoTexto, pecasRecomendadas, mecanicoNome, estimatedPeriods) {
   return [
     "Diagnostico concluido para orcamento.",
     `Placa: ${order?.motocicleta_placa || "Nao informada"}`,
@@ -239,6 +254,7 @@ function buildDiagnosticoWhatsappMessage(order, diagnosticoTexto, pecasRecomenda
     `Queixa: ${String(order?.queixa_principal || "").trim() || "Nao informada"}`,
     `Defeito encontrado: ${diagnosticoTexto}`,
     pecasRecomendadas ? `Pecas recomendadas: ${pecasRecomendadas}` : null,
+    `Tempo estimado do servico: ${formatEstimatedServiceTime(estimatedPeriods)}`,
     `Diagnostico por: ${mecanicoNome}`,
   ]
     .filter(Boolean)
@@ -293,6 +309,7 @@ function getActivePartPreview(order, itemId) {
 }
 
 function OperacaoV2Page() {
+  const { logout } = useAuth();
   const [ordens, setOrdens] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [candidateOrder, setCandidateOrder] = useState(null);
@@ -319,6 +336,7 @@ function OperacaoV2Page() {
     descricao: "",
     pecas_recomendadas: "",
     mecanico_principal_id: "",
+    periodos_estimados: 1,
   });
   const [partForm, setPartForm] = useState({
     descricao_peca: "",
@@ -334,7 +352,8 @@ function OperacaoV2Page() {
     }
 
     if (activeScope.kind === "queue") {
-      return ordens.filter((ordem) => matchesQueue(ordem, activeScope.id));
+      const matchingOrders = ordens.filter((ordem) => matchesQueue(ordem, activeScope.id));
+      return activeScope.id === "fila_atendimento" ? sortPatioQueue(matchingOrders) : matchingOrders;
     }
 
     const normalizedValue =
@@ -409,6 +428,7 @@ function OperacaoV2Page() {
       descricao: diagnosticoAtivo?.causa_identificada || diagnosticoAtivo?.descricao_tecnica || "",
       pecas_recomendadas: diagnosticoAtivo?.pecas_sugeridas_resumo || "",
       mecanico_principal_id: diagnosticoAtivo?.mecanico_principal_id ? String(diagnosticoAtivo.mecanico_principal_id) : "",
+      periodos_estimados: 1,
     });
     setDetailOpen(true);
   }
@@ -656,7 +676,13 @@ function OperacaoV2Page() {
         enviar_orcamentista: true,
       });
 
-      const mensagemPreparada = buildDiagnosticoWhatsappMessage(selectedOrder, diagnosticoTexto, pecasRecomendadas, mecanicoNome);
+      const mensagemPreparada = buildDiagnosticoWhatsappMessage(
+        selectedOrder,
+        diagnosticoTexto,
+        pecasRecomendadas,
+        mecanicoNome,
+        diagnosticoForm.periodos_estimados,
+      );
 
       await registrarComunicacaoWhatsAppV2(selectedOrder.id, {
         tipo_comunicacao: "OFICINA_ORCAMENTISTA",
@@ -673,7 +699,7 @@ function OperacaoV2Page() {
       await refreshSelectedOrder(selectedOrder.id);
       setDetailOpen(false);
       setSelectedOrder(null);
-      setDiagnosticoForm({ descricao: "", pecas_recomendadas: "", mecanico_principal_id: "" });
+      setDiagnosticoForm({ descricao: "", pecas_recomendadas: "", mecanico_principal_id: "", periodos_estimados: 1 });
       setFeedback("Diagnostico salvo e enviado para o orcamentista.");
     } catch (requestError) {
       setError(requestError?.response?.data?.message || "Nao foi possivel salvar o diagnostico.");
@@ -707,6 +733,9 @@ function OperacaoV2Page() {
             <p className="eyebrow">Operacao</p>
             <h1>Localizar moto</h1>
           </div>
+          <button type="button" className="ghost-button operacao-logout-button" onClick={logout}>
+            Sair
+          </button>
         </div>
 
         <div className="operacao-search-block">
@@ -957,6 +986,45 @@ function OperacaoV2Page() {
                     placeholder="Liste as pecas que devem entrar no orcamento"
                   />
                 </label>
+
+                <div className="diagnostico-time-estimate">
+                  <div>
+                    <strong>Tempo estimado do servico</strong>
+                  </div>
+                  <div className="diagnostico-time-controls">
+                    <button
+                      type="button"
+                      className="ghost-button diagnostico-time-button"
+                      onClick={() =>
+                        setDiagnosticoForm((current) => ({
+                          ...current,
+                          periodos_estimados: Math.max(1, current.periodos_estimados - 1),
+                        }))
+                      }
+                      disabled={diagnosticoForm.periodos_estimados <= 1}
+                      aria-label="Retirar meio periodo"
+                    >
+                      -
+                    </button>
+                    <output className="diagnostico-time-value" aria-live="polite">
+                      <span>{formatEstimatedServiceTime(diagnosticoForm.periodos_estimados)}</span>
+                    </output>
+                    <button
+                      type="button"
+                      className="primary-button diagnostico-time-button"
+                      onClick={() =>
+                        setDiagnosticoForm((current) => ({
+                          ...current,
+                          periodos_estimados: Math.min(60, current.periodos_estimados + 1),
+                        }))
+                      }
+                      disabled={diagnosticoForm.periodos_estimados >= 60}
+                      aria-label="Adicionar meio periodo"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
               </>
             ) : (
               <>
