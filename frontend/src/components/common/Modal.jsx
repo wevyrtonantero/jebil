@@ -1,6 +1,6 @@
 import AppIcon from "./AppIcon";
 
-function Modal({ open, title, subtitle, children, onClose, actions, size = "medium", zIndex, closeOnBackdrop = true }) {
+function Modal({ open, title, subtitle, children, onClose, actions, size = "medium", zIndex, closeOnBackdrop = false }) {
   if (!open) {
     return null;
   }
