@@ -550,9 +550,12 @@ function buildWhatsappPdfMessage(ordem, orcamento) {
 
   return [
     `Ola, ${ordem?.cliente_nome || "cliente"}.`,
-    `Segue o PDF do orcamento da moto ${ordem?.motocicleta_modelo || ""} ${ordem?.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}`.trim(),
+    `Segue o PDF do orcamento da moto ${ordem?.motocicleta_modelo || ""} ${ordem?.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : ""}.`.trim(),
     ordem?.data_prometida ? `Prazo de entrega: ${formatDateLabel(ordem.data_prometida)}` : null,
     pdfLink ? `PDF: ${pdfLink}` : null,
+    "",
+    "Estamos a disposicao para qualquer duvida.",
+    "Aguardamos sua autorizacao para iniciar a execucao do servico.",
   ]
     .filter(Boolean)
     .join("\n");

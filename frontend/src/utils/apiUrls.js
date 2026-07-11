@@ -16,7 +16,7 @@ function resolveApiOrigin() {
   const apiUrl = resolveApiBaseUrl();
 
   if (apiUrl === "/api" || apiUrl.startsWith("/")) {
-    return "";
+    return typeof window !== "undefined" ? window.location.origin : "";
   }
 
   return apiUrl.replace(/\/api\/?$/, "");
