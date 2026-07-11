@@ -279,7 +279,7 @@ function OficinaAdminPage() {
             !aguardandoDiagnosticoIds.has(ordem.id) &&
             !aguardandoPecasIds.has(ordem.id) &&
             !aguardandoAutorizacaoIds.has(ordem.id) &&
-            (ordem.items || []).some((item) => item.status_item === "PRONTO_PARA_EXECUTAR"),
+            (ordem.items || []).some((item) => ["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item)),
         ),
       ),
     [aguardandoAutorizacaoIds, aguardandoDiagnosticoIds, aguardandoPecasIds, ordens],

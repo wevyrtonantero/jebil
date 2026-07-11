@@ -96,7 +96,7 @@ function matchesQueue(ordem, scopeId) {
   }
 
   if (scopeId === "fila_atendimento") {
-    return itemStatuses.includes("PRONTO_PARA_EXECUTAR");
+    return itemStatuses.includes("PRONTO_PARA_EXECUTAR") || itemStatuses.includes("EM_EXECUCAO");
   }
 
   if (scopeId === "em_execucao") {
