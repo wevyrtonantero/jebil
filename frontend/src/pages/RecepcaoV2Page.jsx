@@ -537,13 +537,14 @@ function RecepcaoV2Page() {
 
   function validateBeforeReview() {
     const missingFields = [];
+    const isFastService = form.dispensa_queixa_principal;
 
     if (!hasFilledValue(form.nome)) missingFields.push("nome do cliente");
-    if (!hasFilledValue(form.telefone)) missingFields.push("telefone");
+    if (!isFastService && !hasFilledValue(form.telefone)) missingFields.push("telefone");
     if (!hasFilledValue(form.modelo)) missingFields.push("modelo da moto");
-    if (!hasFilledValue(form.ano)) missingFields.push("ano da moto");
+    if (!isFastService && !hasFilledValue(form.ano)) missingFields.push("ano da moto");
     if (!hasFilledValue(form.placa)) missingFields.push("placa da moto");
-    if (!form.dispensa_queixa_principal && !hasFilledValue(form.queixa_principal)) missingFields.push("queixa principal");
+    if (!isFastService && !hasFilledValue(form.queixa_principal)) missingFields.push("queixa principal");
 
     if (missingFields.length) {
       const message = `Falta preencher: ${missingFields.join(", ")}.`;
@@ -945,7 +946,7 @@ function RecepcaoV2Page() {
               {cpfLoading ? <span className="field-note">Buscando cliente...</span> : null}
             </label>
             <label className="field-label">
-              Telefone *
+              Telefone{form.dispensa_queixa_principal ? "" : " *"}
               <input value={form.telefone} placeholder="(11) 99999-9999" onChange={(event) => updateField("telefone", formatPhone(event.target.value))} />
             </label>
           </div>
@@ -967,7 +968,7 @@ function RecepcaoV2Page() {
               <input list="model-options-v2" value={form.modelo} placeholder="CG 160" onChange={(event) => updateField("modelo", event.target.value)} />
             </label>
             <label className="field-label">
-              Ano *
+              Ano{form.dispensa_queixa_principal ? "" : " *"}
               <input value={form.ano} inputMode="numeric" placeholder="2024" onChange={(event) => updateField("ano", event.target.value.replace(/\D/g, "").slice(0, 4))} />
             </label>
             <label className="field-label">
