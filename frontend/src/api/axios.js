@@ -1,8 +1,9 @@
 import axios from "axios";
 import { getStoredToken } from "../utils/storage";
+import { resolveApiBaseUrl } from "../utils/apiUrls";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:3333/api",
+  baseURL: resolveApiBaseUrl(),
   timeout: 15000,
 });
 

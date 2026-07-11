@@ -1,11 +1,12 @@
 import { io } from "socket.io-client";
+import { resolveSocketUrl } from "../utils/apiUrls";
 import { getStoredToken } from "../utils/storage";
 
 let socketInstance = null;
 
 function ensureSocket() {
   if (!socketInstance) {
-    socketInstance = io(import.meta.env.VITE_SOCKET_URL || "http://localhost:3333", {
+    socketInstance = io(resolveSocketUrl(), {
       autoConnect: false,
       transports: ["websocket", "polling"],
     });

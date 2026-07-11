@@ -21,6 +21,7 @@ import Modal from "../components/common/Modal";
 import AppIcon from "../components/common/AppIcon";
 import { brandOptions, getModelOptions } from "../data/motoCatalog";
 import { formatCpf, formatPhone, formatPlate } from "../utils/formatters";
+import { resolveApiOrigin } from "../utils/apiUrls";
 
 const initialItem = () => ({
   descricao: "",
@@ -146,8 +147,7 @@ function formatExternalNumber(value = "") {
 }
 
 function getApiOrigin() {
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3333/api";
-  return apiUrl.replace(/\/api\/?$/, "");
+  return resolveApiOrigin();
 }
 
 function getPublicAssetUrl(path = "") {

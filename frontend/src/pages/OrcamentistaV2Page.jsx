@@ -15,6 +15,7 @@ import {
   uploadOrcamentoPdfV2,
 } from "../services/ordemServicoV2Service";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
+import { resolveApiOrigin } from "../utils/apiUrls";
 
 function getStatusTone(status) {
   if (["APROVADO", "AUTORIZADO", "PRONTO_PARA_EXECUTAR", "CONCLUIDO"].includes(status)) {
@@ -101,8 +102,7 @@ function resolveWhatsappNumber(value = "") {
 }
 
 function getApiOrigin() {
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3333/api";
-  return apiUrl.replace(/\/api\/?$/, "");
+  return resolveApiOrigin();
 }
 
 function getPublicAssetUrl(path = "") {

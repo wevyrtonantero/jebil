@@ -13,6 +13,7 @@ import {
   registrarComunicacaoWhatsAppV2,
   uploadFotosEntradaV2,
 } from "../services/ordemServicoV2Service";
+import { resolveApiOrigin } from "../utils/apiUrls";
 
 function formatDateTime(value) {
   if (!value) {
@@ -29,8 +30,7 @@ function formatDateTime(value) {
 }
 
 function getApiOrigin() {
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3333/api";
-  return apiUrl.replace(/\/api\/?$/, "");
+  return resolveApiOrigin();
 }
 
 function getPublicAssetUrl(path = "") {
