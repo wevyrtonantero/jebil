@@ -132,6 +132,16 @@ function getResponsaveisLabel(order, itemId) {
   return names.length ? names.join(", ") : execucao.mecanico_principal_nome || "Selecionar mecanicos";
 }
 
+function itemHasResponsibleMechanic(order, itemId) {
+  const execucao = getExecucaoForItem(order, itemId);
+
+  if (!execucao) {
+    return false;
+  }
+
+  return Boolean(execucao.mecanico_principal_id || (execucao.mecanicos || []).some((mecanico) => mecanico.mecanico_id));
+}
+
 function getActiveItems(order) {
   return (order?.items || []).filter((item) => !["CONCLUIDO", "CANCELADO"].includes(item.status_item));
 }
@@ -196,7 +206,8 @@ function canFinalizeOrder(order) {
 
   return (
     activeItems.length > 0 &&
-    activeItems.every((item) => ["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item))
+    activeItems.every((item) => ["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item)) &&
+    activeItems.every((item) => itemHasResponsibleMechanic(order, item.id))
   );
 }
 
@@ -209,9 +220,10 @@ function getFinalizeBlockReason(order) {
 
   const blockedItem = activeItems.find((item) => item.status_item !== "EM_EXECUCAO");
   const blockedRealItem = activeItems.find((item) => !["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item));
+  const itemSemMecanico = activeItems.find((item) => !itemHasResponsibleMechanic(order, item.id));
 
   if (!blockedRealItem) {
-    return "";
+    return itemSemMecanico ? `Vincule o mecanico ao servico ${itemSemMecanico.descricao} antes de finalizar.` : "";
   }
 
   return `${blockedRealItem.descricao} ainda esta em ${getItemStatusLabel(blockedRealItem.status_item).toLowerCase()}.`;
@@ -490,6 +502,7 @@ function OperacaoV2Page() {
 
     const itensAtivos = getOperationalItems(selectedOrder).filter((item) => item.status_item !== "CONCLUIDO");
     const itensBloqueados = itensAtivos.filter((item) => !["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item));
+    const itemSemMecanico = itensAtivos.find((item) => !itemHasResponsibleMechanic(selectedOrder, item.id));
 
     if (!itensAtivos.length) {
       setError("Nenhum servico ativo encontrado para finalizar.");
@@ -498,6 +511,11 @@ function OperacaoV2Page() {
 
     if (itensBloqueados.length) {
       setError(`Ainda nao da para finalizar: ${itensBloqueados[0].descricao} esta em ${getItemStatusLabel(itensBloqueados[0].status_item).toLowerCase()}.`);
+      return;
+    }
+
+    if (itemSemMecanico) {
+      setError(`Vincule o mecanico ao servico ${itemSemMecanico.descricao} antes de finalizar.`);
       return;
     }
 
