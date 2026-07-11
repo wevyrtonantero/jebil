@@ -30,6 +30,13 @@ function baseSelect(trx = db) {
         LIMIT 1
       ) as numero_externo`),
       trx.raw(`(
+        SELECT orcamentos.pdf_url
+        FROM orcamentos
+        WHERE orcamentos.ordem_servico_id = ordens_servico.id
+        ORDER BY orcamentos.versao_numero DESC, orcamentos.id DESC
+        LIMIT 1
+      ) as orcamento_pdf_url`),
+      trx.raw(`(
         SELECT COALESCE(SUM(
           CASE
             WHEN itens_ordem_servico.status_item <> 'CANCELADO'
@@ -54,6 +61,12 @@ function baseSelect(trx = db) {
         FROM itens_ordem_servico
         WHERE itens_ordem_servico.ordem_servico_id = ordens_servico.id
       ) as valor_pendente_ordem`),
+      trx.raw(`(
+        SELECT COUNT(*)
+        FROM comunicacoes_whatsapp
+        WHERE comunicacoes_whatsapp.ordem_servico_id = ordens_servico.id
+          AND comunicacoes_whatsapp.tipo_comunicacao = 'SERVICO_FINALIZADO'
+      ) as aviso_retirada_count`),
     );
 }
 

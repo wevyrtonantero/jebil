@@ -823,6 +823,16 @@
   align-items: center;
 }
 
+.orcamento-pendente-card.is-blocked {
+  border-color: rgba(255, 190, 92, 0.28);
+  background: linear-gradient(135deg, rgba(255, 190, 92, 0.08), rgba(255, 255, 255, 0.035));
+}
+
+.orcamento-pendente-card.is-blocked small {
+  color: #ffd79b;
+  font-weight: 700;
+}
+
 .orcamento-pendente-main {
   min-width: 0;
 }
@@ -859,6 +869,11 @@
   flex-shrink: 0;
 }
 
+.orcamento-pendente-edit:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .orcamento-page-shell {
   display: grid;
   gap: 24px;
@@ -871,7 +886,7 @@
 
 .orcamento-overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
 }
 
@@ -984,6 +999,118 @@
 .orcamento-card-sent {
   background: rgba(58, 131, 255, 0.04);
   border-color: rgba(58, 131, 255, 0.12);
+}
+
+.external-budget-link {
+  color: #ffbd77;
+  font-weight: 900;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 189, 119, 0.45);
+  text-underline-offset: 3px;
+}
+
+.external-budget-link:hover {
+  color: #ffd7a8;
+  text-decoration-color: rgba(255, 215, 168, 0.85);
+}
+
+.required-budget-field {
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 92, 92, 0.28);
+  background: rgba(255, 92, 92, 0.06);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.required-budget-field input {
+  border-color: rgba(255, 92, 92, 0.38);
+}
+
+.required-budget-field.is-invalid {
+  color: #ffc1c1;
+}
+
+.required-budget-field.is-valid {
+  border-color: rgba(91, 236, 140, 0.34);
+  background: rgba(91, 236, 140, 0.07);
+  color: #c8ffd6;
+}
+
+.required-budget-field.is-valid input {
+  border-color: rgba(91, 236, 140, 0.42);
+}
+
+.orcamento-pdf-dropzone {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 28px 22px;
+  border: 1px dashed rgba(255, 157, 44, 0.45);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at center top, rgba(255, 157, 44, 0.12), transparent 52%),
+    rgba(255, 255, 255, 0.035);
+  color: var(--text-main);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.orcamento-pdf-dropzone:hover,
+.orcamento-pdf-dropzone.has-file {
+  border-color: rgba(91, 236, 140, 0.45);
+  background:
+    radial-gradient(circle at center top, rgba(91, 236, 140, 0.14), transparent 52%),
+    rgba(255, 255, 255, 0.04);
+}
+
+.orcamento-pdf-dropzone:hover {
+  transform: translateY(-1px);
+}
+
+.orcamento-pdf-dropzone small {
+  color: var(--text-soft);
+}
+
+.orcamento-pdf-icon {
+  width: 54px;
+  height: 54px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 18px;
+  background: rgba(255, 157, 44, 0.16);
+  color: #ffbd77;
+}
+
+.orcamento-pdf-dropzone.has-file .orcamento-pdf-icon {
+  background: rgba(91, 236, 140, 0.16);
+  color: #bdf8ce;
+}
+
+.orcamento-ready-section {
+  border-color: rgba(87, 201, 125, 0.12);
+}
+
+.orcamento-ready-card.is-notified {
+  border-color: rgba(91, 236, 140, 0.3);
+  background:
+    linear-gradient(135deg, rgba(91, 236, 140, 0.12), rgba(87, 201, 125, 0.06)),
+    rgba(87, 201, 125, 0.08);
+}
+
+.orcamento-ready-notified {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(91, 236, 140, 0.32);
+  background: rgba(91, 236, 140, 0.14);
+  color: #bdf8ce;
+  font-size: 0.88rem;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .auth-modal-toolbar {
@@ -2326,7 +2453,7 @@
 }
 
 .compact-layout {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .workshop-tv-page {
@@ -2345,11 +2472,25 @@
   padding: 18px 20px;
 }
 
+.workshop-tv-page .office-queue-card {
+  width: 100%;
+  font-size: 1.18rem;
+}
+
+.workshop-tv-page .office-queue-card strong {
+  font-size: 1.24rem;
+}
+
+.workshop-tv-page .office-queue-card p,
+.workshop-tv-page .office-queue-card small {
+  font-size: 1.18rem;
+  line-height: 1.45;
+}
+
 .workshop-tv-page .office-queue-list {
   display: grid;
   gap: 12px;
   align-content: start;
-  justify-content: start;
 }
 
 .compact-queue-grid {
@@ -2392,6 +2533,16 @@
   border-radius: 28px;
   border: 1px solid rgba(255, 209, 64, 0.26);
   box-shadow: inset 0 0 0 1px rgba(255, 209, 64, 0.08);
+}
+
+.workshop-espera-column {
+  background:
+    radial-gradient(circle at top left, rgba(255, 209, 64, 0.2), transparent 30%),
+    radial-gradient(circle at top right, rgba(144, 104, 255, 0.22), transparent 34%),
+    linear-gradient(180deg, rgba(42, 38, 74, 0.96), rgba(31, 38, 70, 0.96));
+  border-radius: 28px;
+  border: 1px solid rgba(210, 176, 255, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 64, 0.07);
 }
 
 .workshop-autorizacao-column {
@@ -2442,6 +2593,11 @@
   border-color: rgba(255, 211, 88, 0.24);
 }
 
+.workshop-espera-column .office-queue-card {
+  background: linear-gradient(180deg, rgba(61, 54, 104, 0.66), rgba(47, 51, 86, 0.56));
+  border-color: rgba(218, 184, 255, 0.24);
+}
+
 .workshop-autorizacao-column .office-queue-card {
   background: linear-gradient(180deg, rgba(54, 48, 118, 0.66), rgba(40, 43, 92, 0.56));
   border-color: rgba(154, 121, 255, 0.24);
@@ -2481,6 +2637,30 @@
   font-weight: 800;
   letter-spacing: 0.03em;
   white-space: nowrap;
+}
+
+.office-waiting-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.office-waiting-pill.parts {
+  background: rgba(255, 209, 64, 0.18);
+  border: 1px solid rgba(255, 209, 64, 0.34);
+  color: #fff0ac;
+}
+
+.office-waiting-pill.approval {
+  background: rgba(154, 121, 255, 0.2);
+  border: 1px solid rgba(154, 121, 255, 0.34);
+  color: #ded0ff;
 }
 
 .office-execucao-card {
@@ -2542,6 +2722,12 @@
   color: #fff0b0;
 }
 
+.workshop-espera-column .queue-order-badge {
+  background: rgba(210, 176, 255, 0.18);
+  border-color: rgba(210, 176, 255, 0.32);
+  color: #efe2ff;
+}
+
 .workshop-autorizacao-column .queue-order-badge {
   background: rgba(144, 104, 255, 0.2);
   border-color: rgba(144, 104, 255, 0.34);
@@ -2584,6 +2770,12 @@
   color: #fff1bc;
 }
 
+.workshop-espera-column .summary-pill.strong {
+  background: rgba(210, 176, 255, 0.16);
+  border-color: rgba(210, 176, 255, 0.28);
+  color: #f0e4ff;
+}
+
 .workshop-autorizacao-column .summary-pill.strong {
   background: rgba(144, 104, 255, 0.16);
   border-color: rgba(144, 104, 255, 0.28);
@@ -2619,6 +2811,11 @@
 .workshop-pecas-column .empty-state {
   border-color: rgba(255, 209, 64, 0.22);
   color: #ffe08a;
+}
+
+.workshop-espera-column .empty-state {
+  border-color: rgba(210, 176, 255, 0.24);
+  color: #dfcaff;
 }
 
 .workshop-autorizacao-column .empty-state {
@@ -3378,7 +3575,7 @@
 }
 
 .recepcao-payment-amount {
-  color: #ffd08a;
+  color: #cfe2ff;
   font-size: 0.94rem;
   font-weight: 900;
   letter-spacing: 0;

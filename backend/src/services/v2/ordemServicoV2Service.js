@@ -1841,6 +1841,15 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
       throw new ApiError(404, "Ordem de servico V2 nao encontrada.");
     }
 
+    const diagnosticoPendente = await trx("itens_ordem_servico")
+      .where({ ordem_servico_id: ordemServicoId })
+      .whereIn("status_item", ["AGUARDANDO_DIAGNOSTICO", "EM_DIAGNOSTICO"])
+      .first();
+
+    if (diagnosticoPendente) {
+      throw new ApiError(400, "O diagnostico do mecanico ainda nao foi concluido para esta OS.");
+    }
+
     const orcamentosExistentes = await orcamentoV2Repository.listByOrdemServicoId(ordemServicoId, trx);
     const orcamentoExistente = orcamentosExistentes[0] || null;
     const valorTotal = sumOrcamentoItems(payload.items);
@@ -1867,7 +1876,6 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
           observacoes: payload.observacoes || null,
           valor_total: valorTotal,
           enviado_cliente_em: payload.statusOrcamento === "ENVIADO" ? orcamentoExistente.enviado_cliente_em || db.fn.now() : null,
-          pdf_url: null,
           arquivado_em: null,
         })
       : await orcamentoV2Repository.insert(trx, {
@@ -1942,17 +1950,8 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
     };
   });
 
-  try {
-    const pdfData = await saveGeneratedOrcamentoPdf(data.orcamento.id, currentUser, false);
-    emitV2Updated(ordemServicoId, { tipo: "orcamento_salvo" });
-    return pdfData;
-  } catch (error) {
-    emitV2Updated(ordemServicoId, { tipo: "orcamento_salvo" });
-    return {
-      ...data,
-      pdf_warning: "Orcamento salvo, mas nao foi possivel gerar o PDF agora.",
-    };
-  }
+  emitV2Updated(ordemServicoId, { tipo: "orcamento_salvo" });
+  return data;
 }
 
 async function updateOrcamentoStatus(orcamentoId, payload, currentUser) {

@@ -244,6 +244,14 @@ function OficinaAdminPage() {
 
   const aguardandoAutorizacaoIds = useMemo(() => new Set(aguardandoAutorizacao.map((ordem) => ordem.id)), [aguardandoAutorizacao]);
 
+  const aguardandoPecasOuAutorizacao = useMemo(
+    () => [
+      ...aguardandoPecas.map((ordem) => ({ ...ordem, oficinaStatusVisual: "PECA" })),
+      ...aguardandoAutorizacao.map((ordem) => ({ ...ordem, oficinaStatusVisual: "AUTORIZACAO" })),
+    ],
+    [aguardandoAutorizacao, aguardandoPecas],
+  );
+
   const servicosRapidos = useMemo(
     () =>
       ordens
@@ -360,20 +368,21 @@ function OficinaAdminPage() {
           </div>
         </div>
 
-        <div className="board-column workshop-pecas-column">
+        <div className="board-column workshop-espera-column">
           <div className="board-title">
             <div>
-              <h2>Aguardando pecas</h2>
+              <h2>Aguardando pecas ou autorizacao</h2>
             </div>
             <div className="queue-summary">
-              <span className="summary-pill strong">{aguardandoPecas.length}</span>
+              <span className="summary-pill strong">{aguardandoPecasOuAutorizacao.length}</span>
             </div>
           </div>
 
           <div className="office-queue-list">
-            {aguardandoPecas.map((ordem) => {
+            {aguardandoPecasOuAutorizacao.map((ordem) => {
               const previsoesAtivas = getActivePartPreviews(ordem);
               const proximaPrevisao = previsoesAtivas[0] || null;
+              const isAguardandoPeca = ordem.oficinaStatusVisual === "PECA";
 
               return (
                 <article className="queue-card office-queue-card" key={ordem.id}>
@@ -389,10 +398,13 @@ function OficinaAdminPage() {
                     </div>
                     <div className="office-queue-tools">
                       {isAtendimentoPrioritario(ordem) ? <span className="office-priority-pill">Prioritario</span> : null}
+                      <span className={`office-waiting-pill ${isAguardandoPeca ? "parts" : "approval"}`}>
+                        {isAguardandoPeca ? "Peca" : "Autorizacao"}
+                      </span>
                     </div>
                   </div>
 
-                  {previsoesAtivas.length ? (
+                  {isAguardandoPeca && previsoesAtivas.length ? (
                     <div className="office-part-list">
                       {previsoesAtivas.map((previsao) => (
                         <div className="office-part-line" key={previsao.id}>
@@ -402,10 +414,10 @@ function OficinaAdminPage() {
                       ))}
                     </div>
                   ) : (
-                    <small>{getResumoItens(ordem) || "Sem itens informados."}</small>
+                    <small>{getResumoItens(ordem) || (isAguardandoPeca ? "Sem itens informados." : "Aguardando retorno do cliente.")}</small>
                   )}
 
-                  {proximaPrevisao?.previsao_chegada ? (
+                  {isAguardandoPeca && proximaPrevisao?.previsao_chegada ? (
                     <div className="office-part-countdown">
                       <span>Chegada prevista</span>
                       <strong>{formatCountdown(proximaPrevisao.previsao_chegada, clockNow)}</strong>
@@ -414,42 +426,7 @@ function OficinaAdminPage() {
                 </article>
               );
             })}
-            {aguardandoPecas.length === 0 ? <div className="empty-state">Nenhuma moto aguardando pecas.</div> : null}
-          </div>
-        </div>
-
-        <div className="board-column workshop-autorizacao-column">
-          <div className="board-title">
-            <div>
-              <h2>Aguardando autorizacao</h2>
-            </div>
-            <div className="queue-summary">
-              <span className="summary-pill strong">{aguardandoAutorizacao.length}</span>
-            </div>
-          </div>
-
-          <div className="office-queue-list">
-            {aguardandoAutorizacao.map((ordem) => (
-              <article className="queue-card office-queue-card" key={ordem.id}>
-                <div className="office-queue-head">
-                  <div className="office-queue-identification">
-                    <div>
-                      <strong>{getNomeCurto(ordem.cliente_nome)}</strong>
-                      <p>
-                        {ordem.motocicleta_modelo}
-                        {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="office-queue-tools">
-                    {isAtendimentoPrioritario(ordem) ? <span className="office-priority-pill">Prioritario</span> : null}
-                  </div>
-                </div>
-
-                <small>{getResumoItens(ordem) || "Aguardando retorno do cliente."}</small>
-              </article>
-            ))}
-            {aguardandoAutorizacao.length === 0 ? <div className="empty-state">Nenhuma moto aguardando autorizacao.</div> : null}
+            {aguardandoPecasOuAutorizacao.length === 0 ? <div className="empty-state">Nenhuma moto aguardando pecas ou autorizacao.</div> : null}
           </div>
         </div>
 

@@ -14,7 +14,6 @@ import {
   getOrdemServicoV2,
   listItemSuggestionsV2,
   listOrdensServicoV2,
-  registrarComunicacaoWhatsAppV2,
   updateItemPagamentoV2,
   uploadFotosEntradaV2,
 } from "../services/ordemServicoV2Service";
@@ -146,6 +145,23 @@ function formatExternalNumber(value = "") {
   return normalized ? `#${normalized}` : "";
 }
 
+function getApiOrigin() {
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3333/api";
+  return apiUrl.replace(/\/api\/?$/, "");
+}
+
+function getPublicAssetUrl(path = "") {
+  if (!path) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  return `${getApiOrigin()}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 function isAtendimentoRapido(ordem) {
   if (ordem?.legado_atendimento_id) {
     return true;
@@ -158,30 +174,6 @@ function isAtendimentoRapido(ordem) {
     itensValidos.length > 0 &&
     itensValidos.every((item) => Boolean(item.execucao_direta) && !Boolean(item.exige_diagnostico))
   );
-}
-
-function buildReadyWhatsappMessage(ordem) {
-  const moto = [
-    ordem.motocicleta_marca,
-    ordem.motocicleta_modelo,
-    ordem.motocicleta_ano,
-    ordem.motocicleta_placa,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-
-  return [
-    `Ola, ${ordem.cliente_nome}.`,
-    `Sua motocicleta ${moto} esta pronta para retirada.`,
-    "Horario: seg. a sex. 07:00-20:00 | sab. 08:00-13:00 | dom. fechado.",
-    "Estamos a disposicao.",
-  ].join("\n");
-}
-
-function resolveWhatsappNumber(value = "") {
-  const digits = String(value || "").replace(/\D/g, "");
-  return digits.startsWith("55") ? digits : `55${digits}`;
 }
 
 function RecepcaoV2Page() {
@@ -261,35 +253,6 @@ function RecepcaoV2Page() {
     setIntakeOpen(true);
   }
 
-  async function handleNotifyReady(ordem) {
-    if (!ordem.cliente_telefone) {
-      setReadyFeedback("Este cliente nao possui telefone cadastrado.");
-      return;
-    }
-
-    setReadyActionId(ordem.id);
-    setReadyFeedback("");
-
-    try {
-      const mensagemPreparada = buildReadyWhatsappMessage(ordem);
-      await registrarComunicacaoWhatsAppV2(ordem.id, {
-        tipo_comunicacao: "SERVICO_FINALIZADO",
-        destinatario: ordem.cliente_telefone,
-        finalidade: "Aviso de motocicleta pronta para retirada.",
-        mensagem_preparada: mensagemPreparada,
-        status_registro: "WHATSAPP_ABERTO",
-      });
-
-      const whatsappNumber = resolveWhatsappNumber(ordem.cliente_telefone);
-      window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(mensagemPreparada)}`, "_blank", "noopener,noreferrer");
-      setReadyFeedback(`WhatsApp preparado para ${ordem.cliente_nome}.`);
-    } catch (requestError) {
-      setReadyFeedback(requestError?.response?.data?.message || "Nao foi possivel preparar o WhatsApp de retirada.");
-    } finally {
-      setReadyActionId(null);
-    }
-  }
-
   async function handleConfirmWithdrawal(ordem) {
     const confirmed = window.confirm(`Confirmar retirada da moto ${ordem.motocicleta_placa || ordem.motocicleta_modelo}?`);
 
@@ -312,7 +275,7 @@ function RecepcaoV2Page() {
   }
 
   async function handleConfirmQuickPayment(ordem) {
-    const confirmed = window.confirm(`Confirmar pagamento de R$ ${toMoney(ordem.valor_pendente_ordem || 0)} e arquivar esta OS?`);
+    const confirmed = window.confirm(`Confirmar pagamento de R$ ${toMoney(ordem.valor_pendente_ordem || 0)} e finalizar a retirada?`);
 
     if (!confirmed) {
       return;
@@ -884,8 +847,9 @@ function RecepcaoV2Page() {
           <div className="recepcao-ready-list">
             {readyOrders.map((ordem) => {
               const externalNumber = formatExternalNumber(ordem.numero_externo);
+              const budgetPdfUrl = getPublicAssetUrl(ordem.orcamento_pdf_url);
               const pendingAmount = Number(ordem.valor_pendente_ordem || 0);
-              const isQuickService = isAtendimentoRapido(ordem);
+              const totalAmount = Number(ordem.valor_total_ordem || 0);
 
               return (
                 <article className="recepcao-ready-card" key={ordem.id}>
@@ -894,33 +858,26 @@ function RecepcaoV2Page() {
                     <p>
                       {ordem.motocicleta_modelo}
                       {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
-                      {externalNumber ? ` | ${externalNumber}` : ""}
+                      {externalNumber ? " | " : ""}
+                      {externalNumber && budgetPdfUrl ? (
+                        <a className="external-budget-link" href={budgetPdfUrl} target="_blank" rel="noreferrer">
+                          {externalNumber}
+                        </a>
+                      ) : externalNumber}
                     </p>
                     <div className="recepcao-ready-meta">
                       <small>Pronta desde {formatReadyTime(ordem.pronta_retirada_em || ordem.atualizado_em)}</small>
-                      {isQuickService && pendingAmount > 0 ? (
-                        <strong className="recepcao-payment-amount">R$ {toMoney(pendingAmount)}</strong>
-                      ) : null}
+                      <strong className="recepcao-payment-amount">Total R$ {toMoney(totalAmount)}</strong>
                     </div>
                   </div>
                   <div className="recepcao-ready-actions">
-                    <button
-                      type="button"
-                      className="icon-button recepcao-whatsapp-action"
-                      onClick={() => void handleNotifyReady(ordem)}
-                      disabled={readyActionId === ordem.id}
-                      aria-label="Avisar cliente pelo WhatsApp"
-                      title="Avisar cliente pelo WhatsApp"
-                    >
-                      <AppIcon name="whatsapp" size={18} />
-                    </button>
-                    {isQuickService && pendingAmount > 0 ? (
+                    {pendingAmount > 0 ? (
                       <button
                         type="button"
                         className="recepcao-paid-button"
                         onClick={() => void handleConfirmQuickPayment(ordem)}
                         disabled={readyActionId === ordem.id}
-                        title="Confirmar pagamento e arquivar"
+                        title="Confirmar pagamento e finalizar retirada"
                       >
                         <AppIcon name="money" size={16} />
                         Pago
