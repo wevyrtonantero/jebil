@@ -16,6 +16,7 @@ import {
   updateItemStatusV2,
 } from "../services/ordemServicoV2Service";
 import { formatPlate } from "../utils/formatters";
+import { resolveApiOrigin } from "../utils/apiUrls";
 import { sortPatioQueue } from "../utils/patioQueue";
 
 const ORCAMENTISTA_WHATSAPP = "+55 11 97454-0115";
@@ -130,6 +131,37 @@ function getResponsaveisLabel(order, itemId) {
 
   const names = (execucao.mecanicos || []).map((mecanico) => mecanico.mecanico_nome).filter(Boolean);
   return names.length ? names.join(", ") : execucao.mecanico_principal_nome || "Selecionar mecanicos";
+}
+
+function formatExternalNumber(value = "") {
+  const normalized = String(value || "").replace(/^#+/, "").trimStart();
+  return normalized ? `#${normalized}` : "";
+}
+
+function getPublicAssetUrl(path = "") {
+  if (!path) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  const origin = resolveApiOrigin();
+  return `${origin}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+function getExternalBudgetLink(order) {
+  const externalNumber = formatExternalNumber(order?.numero_externo);
+
+  if (!externalNumber) {
+    return null;
+  }
+
+  return {
+    label: externalNumber,
+    pdfUrl: getPublicAssetUrl(order?.orcamento_pdf_url),
+  };
 }
 
 function itemHasResponsibleMechanic(order, itemId) {
@@ -1056,6 +1088,23 @@ function OperacaoV2Page() {
                       <AppIcon name="workshop" size={14} />
                       {getOperationalItems(selectedOrder).filter((item) => item.status_item === "EM_EXECUCAO").length}
                     </span>
+                    {getExternalBudgetLink(selectedOrder) ? (
+                      getExternalBudgetLink(selectedOrder).pdfUrl ? (
+                        <a
+                          className="summary-pill external-budget-link"
+                          href={getExternalBudgetLink(selectedOrder).pdfUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Abrir PDF do orcamento"
+                        >
+                          {getExternalBudgetLink(selectedOrder).label}
+                        </a>
+                      ) : (
+                        <span className="summary-pill" title="Numero externo">
+                          {getExternalBudgetLink(selectedOrder).label}
+                        </span>
+                      )
+                    ) : null}
                   </div>
                 </article>
 

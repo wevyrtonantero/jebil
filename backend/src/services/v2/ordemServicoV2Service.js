@@ -734,6 +734,19 @@ async function updateItemStatus(ordemServicoId, itemId, nextStatus, currentUser,
       throw new ApiError(409, `Transicao invalida de ${item.status_item} para ${nextStatus}.`);
     }
 
+    if (["EM_EXECUCAO", "CONCLUIDO"].includes(nextStatus)) {
+      const execucao = await trx("execucoes").where({ item_ordem_servico_id: itemId }).first();
+      const mecanicoAuxiliar = execucao
+        ? await trx("execucao_mecanicos")
+          .where({ execucao_id: execucao.id, status_participacao: "ATIVA" })
+          .first()
+        : null;
+
+      if (!execucao || (!execucao.mecanico_principal_id && !mecanicoAuxiliar)) {
+        throw new ApiError(400, "Vincule o mecanico responsavel antes de executar ou finalizar este servico.");
+      }
+    }
+
     const updateFields = {
       status_item: nextStatus,
       iniciado_em:
