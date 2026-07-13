@@ -144,6 +144,15 @@ async function updateStatus(id, ativo) {
   return findById(id);
 }
 
+async function hasActiveOrder(id) {
+  const row = await db("ordens_servico")
+    .where({ motocicleta_id: id })
+    .whereNotIn("status_geral", ["PRONTA_PARA_RETIRADA", "FINALIZADA", "ARQUIVADA", "CANCELADA"])
+    .first();
+
+  return Boolean(row);
+}
+
 module.exports = {
   list,
   findById,
@@ -153,4 +162,5 @@ module.exports = {
   insert,
   update,
   updateStatus,
+  hasActiveOrder,
 };

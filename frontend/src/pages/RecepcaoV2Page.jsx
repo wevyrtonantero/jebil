@@ -655,7 +655,13 @@ function RecepcaoV2Page() {
 
       if (motoAtiva) {
         if (Number(motoAtiva.cliente_id) !== Number(clienteId)) {
-          throw requestError;
+          const confirmed = window.confirm(
+            `Esta moto ja esta cadastrada para ${motoAtiva.cliente_nome || "outro cliente"}. Deseja transferir a moto para ${form.nome}?`,
+          );
+
+          if (!confirmed) {
+            throw requestError;
+          }
         }
 
         setSelectedMotoId(motoAtiva.id);
@@ -671,7 +677,13 @@ function RecepcaoV2Page() {
       }
 
       if (Number(motoInativa.cliente_id) !== Number(clienteId)) {
-        throw requestError;
+        const confirmed = window.confirm(
+          `Esta moto inativa esta cadastrada para ${motoInativa.cliente_nome || "outro cliente"}. Deseja reativar e transferir para ${form.nome}?`,
+        );
+
+        if (!confirmed) {
+          throw requestError;
+        }
       }
 
       await reactivateMotocicleta(motoInativa.id);

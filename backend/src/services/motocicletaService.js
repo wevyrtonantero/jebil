@@ -102,6 +102,10 @@ async function updateMotocicleta(id, payload) {
 
   await ensureClienteExists(payload.clienteId);
 
+  if (Number(existing.cliente_id) !== Number(payload.clienteId) && await motocicletaRepository.hasActiveOrder(existing.id)) {
+    throw new ApiError(409, "Nao e possivel transferir esta motocicleta porque existe uma OS ativa para ela.");
+  }
+
   if (payload.placaNormalizada) {
     const duplicatedPlate = await motocicletaRepository.findByPlacaNormalizada(payload.placaNormalizada);
 
