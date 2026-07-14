@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listOperacionalV2 } from "../services/ordemServicoV2Service";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
 import { sortPatioQueue } from "../utils/patioQueue";
@@ -153,6 +153,68 @@ function getQuickServiceItems(ordem) {
   return (ordem.items || []).filter((item) => !["CANCELADO"].includes(item.status_item) && item.descricao !== "Diagnostico inicial");
 }
 
+function createAlertToneDataUrl() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const sampleRate = 44100;
+  const durationSeconds = 1.65;
+  const sampleCount = Math.floor(sampleRate * durationSeconds);
+  const buffer = new ArrayBuffer(44 + sampleCount * 2);
+  const view = new DataView(buffer);
+  const writeString = (offset, value) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + sampleCount * 2, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, sampleCount * 2, true);
+
+  const tones = [
+    { start: 0, end: 0.26, frequency: 880 },
+    { start: 0.34, end: 0.6, frequency: 1175 },
+    { start: 0.68, end: 0.94, frequency: 880 },
+    { start: 1.08, end: 1.42, frequency: 660 },
+  ];
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const time = index / sampleRate;
+    const tone = tones.find((item) => time >= item.start && time <= item.end);
+    let sample = 0;
+
+    if (tone) {
+      const position = time - tone.start;
+      const toneDuration = tone.end - tone.start;
+      const fade = Math.min(1, position / 0.03, (toneDuration - position) / 0.04);
+      sample = Math.sin(2 * Math.PI * tone.frequency * position) * 0.92 * Math.max(0, fade);
+    }
+
+    view.setInt16(44 + index * 2, Math.max(-1, Math.min(1, sample)) * 0x7fff, true);
+  }
+
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+
+  return `data:audio/wav;base64,${window.btoa(binary)}`;
+}
+
 function isAguardandoDiagnostico(ordem) {
   return (ordem.items || []).some((item) => ["AGUARDANDO_DIAGNOSTICO", "EM_DIAGNOSTICO"].includes(item.status_item));
 }
@@ -176,10 +238,17 @@ function isAguardandoAutorizacao(ordem) {
 function OficinaAdminPage() {
   const [ordens, setOrdens] = useState([]);
   const [clockNow, setClockNow] = useState(() => Date.now());
+  const [hasLoadedOrdens, setHasLoadedOrdens] = useState(false);
+  const [soundArmed, setSoundArmed] = useState(false);
+  const [quickAlert, setQuickAlert] = useState(null);
+  const alertAudioUrlRef = useRef("");
+  const quickAlertInitializedRef = useRef(false);
+  const announcedQuickOrderIdsRef = useRef(new Set());
 
   const loadOrdens = useCallback(async () => {
     const data = await listOperacionalV2(50);
     setOrdens(data);
+    setHasLoadedOrdens(true);
   }, []);
 
   useEffect(() => {
@@ -207,6 +276,53 @@ function OficinaAdminPage() {
   }, []);
 
   useRealtimeRefresh(loadOrdens);
+
+  const playQuickServiceTone = useCallback(async () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!alertAudioUrlRef.current) {
+      alertAudioUrlRef.current = createAlertToneDataUrl();
+    }
+
+    const audio = new window.Audio(alertAudioUrlRef.current);
+    audio.volume = 1;
+    await audio.play().catch(() => {});
+  }, []);
+
+  const triggerQuickServiceAlert = useCallback(
+    (ordem) => {
+      if (!ordem) {
+        return;
+      }
+
+      setQuickAlert({
+        id: ordem.id,
+        motocicleta_modelo: ordem.motocicleta_modelo,
+        motocicleta_placa: ordem.motocicleta_placa,
+      });
+      void playQuickServiceTone();
+    },
+    [playQuickServiceTone],
+  );
+
+  const handleIncomingQuickServiceAlert = useCallback(
+    (payload) => {
+      if (!payload) {
+        return;
+      }
+
+      if (payload.id) {
+        announcedQuickOrderIdsRef.current.add(String(payload.id));
+      }
+
+      if (soundArmed) {
+        triggerQuickServiceAlert(payload);
+      }
+    },
+    [soundArmed, triggerQuickServiceAlert],
+  );
 
   const aguardandoDiagnostico = useMemo(
     () => ordens.filter((ordem) => !isServicoRapido(ordem) && podeEntrarNaOficina(ordem) && isAguardandoDiagnostico(ordem)),
@@ -285,8 +401,99 @@ function OficinaAdminPage() {
     [aguardandoAutorizacaoIds, aguardandoDiagnosticoIds, aguardandoPecasIds, ordens],
   );
 
+  useEffect(() => {
+    if (!hasLoadedOrdens) {
+      return;
+    }
+
+    const currentIds = new Set(servicosRapidos.map((ordem) => String(ordem.id)));
+
+    if (!quickAlertInitializedRef.current) {
+      currentIds.forEach((id) => announcedQuickOrderIdsRef.current.add(id));
+      quickAlertInitializedRef.current = true;
+      return;
+    }
+
+    const newQuickServices = servicosRapidos.filter((ordem) => !announcedQuickOrderIdsRef.current.has(String(ordem.id)));
+
+    currentIds.forEach((id) => announcedQuickOrderIdsRef.current.add(id));
+
+    if (!soundArmed || newQuickServices.length === 0) {
+      return;
+    }
+
+    newQuickServices.forEach((ordem, index) => {
+      window.setTimeout(() => triggerQuickServiceAlert(ordem), index * 1200);
+    });
+  }, [hasLoadedOrdens, servicosRapidos, soundArmed, triggerQuickServiceAlert]);
+
+  useEffect(() => {
+    const handleQuickServiceAlert = (event) => {
+      if (event.key !== "jebil:oficina:quick-service-alert" || !event.newValue) {
+        return;
+      }
+
+      try {
+        const payload = JSON.parse(event.newValue);
+
+        handleIncomingQuickServiceAlert(payload);
+      } catch {
+        // Ignora avisos antigos ou incompletos.
+      }
+    };
+
+    window.addEventListener("storage", handleQuickServiceAlert);
+    return () => window.removeEventListener("storage", handleQuickServiceAlert);
+  }, [handleIncomingQuickServiceAlert]);
+
+  useEffect(() => {
+    if (!("BroadcastChannel" in window)) {
+      return undefined;
+    }
+
+    const channel = new window.BroadcastChannel("jebil-oficina-alerts");
+    channel.onmessage = (event) => handleIncomingQuickServiceAlert(event.data);
+
+    return () => channel.close();
+  }, [handleIncomingQuickServiceAlert]);
+
+  useEffect(() => {
+    if (!quickAlert) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setQuickAlert(null);
+    }, 9000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [quickAlert]);
+
+  const activateOfficeSound = () => {
+    setSoundArmed(true);
+    void playQuickServiceTone();
+  };
+
   return (
     <section className="page-section workshop-tv-page">
+      {!soundArmed ? (
+        <div className="workshop-audio-setup">
+          <div>
+            <strong>Som da oficina</strong>
+            <span>Clique uma vez antes de espelhar para a TV receber os avisos.</span>
+          </div>
+          <button type="button" className="primary-button" onClick={activateOfficeSound}>
+            Ativar som da TV
+          </button>
+        </div>
+      ) : null}
+      {quickAlert ? (
+        <div className="workshop-quick-alert" role="status" aria-live="polite">
+          <span>Servico rapido chegou</span>
+          <strong>{quickAlert.motocicleta_modelo || "Moto sem modelo"}</strong>
+          <p>{quickAlert.motocicleta_placa || "Sem placa"}</p>
+        </div>
+      ) : null}
       <div className="office-grid compact-layout">
         <div className="board-column workshop-diagnostico-column">
           <div className="board-title">

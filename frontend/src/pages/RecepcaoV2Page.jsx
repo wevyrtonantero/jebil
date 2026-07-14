@@ -176,6 +176,31 @@ function isAtendimentoRapido(ordem) {
   );
 }
 
+function broadcastQuickServiceAlert(ordem, motocicleta) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const payload = {
+    id: ordem?.id,
+    motocicleta_modelo: motocicleta?.modelo,
+    motocicleta_placa: motocicleta?.placa,
+    emittedAt: Date.now(),
+  };
+
+  try {
+    window.localStorage.setItem("jebil:oficina:quick-service-alert", JSON.stringify(payload));
+  } catch {
+    // Sem problema: o canal direto abaixo ainda tenta avisar a oficina.
+  }
+
+  if ("BroadcastChannel" in window) {
+    const channel = new window.BroadcastChannel("jebil-oficina-alerts");
+    channel.postMessage(payload);
+    channel.close();
+  }
+}
+
 function RecepcaoV2Page() {
   const navigate = useNavigate();
   const photoInputRef = useRef(null);
@@ -694,6 +719,8 @@ function RecepcaoV2Page() {
   }
 
   async function handleConfirmSubmit() {
+    const isServicoRapido = form.dispensa_queixa_principal;
+
     setSending(true);
     setError("");
 
@@ -732,7 +759,6 @@ function RecepcaoV2Page() {
         bundle = await uploadFotosEntradaV2(ordem.id, fotosEntrada);
       }
 
-      const isServicoRapido = form.dispensa_queixa_principal;
       setForm(createInitialForm());
       setSelectedClienteId(null);
       setSelectedMotoId(null);
@@ -746,6 +772,8 @@ function RecepcaoV2Page() {
         navigate(`/recepcao/fotos?ordemId=${ordem.id}`);
         return;
       }
+
+      broadcastQuickServiceAlert(ordem, motocicleta);
 
       setSuccessData({
         numero_os: ordem.numero_os,
