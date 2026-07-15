@@ -40,6 +40,18 @@ function selectPatioQueue(ordens = []) {
   });
 }
 
+function selectDiagnosticPatioQueue(ordens = []) {
+  return ordens.filter((ordem) => {
+    const items = ordem.items || [];
+
+    return (
+      !isQuickServiceOrder(ordem) &&
+      Boolean(ordem.cadastro_fotos_finalizado) &&
+      items.some((item) => ["AGUARDANDO_DIAGNOSTICO", "EM_DIAGNOSTICO"].includes(item.status_item))
+    );
+  });
+}
+
 function sortPatioQueue(ordens = []) {
   return [...ordens].sort((left, right) => {
     const leftPosition = left.ordem_patio == null ? Number.MAX_SAFE_INTEGER : Number(left.ordem_patio);
@@ -53,4 +65,4 @@ function sortPatioQueue(ordens = []) {
   });
 }
 
-export { selectPatioQueue, sortPatioQueue };
+export { selectDiagnosticPatioQueue, selectPatioQueue, sortPatioQueue };

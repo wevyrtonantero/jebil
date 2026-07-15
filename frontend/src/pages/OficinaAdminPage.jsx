@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listOperacionalV2 } from "../services/ordemServicoV2Service";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
-import { sortPatioQueue } from "../utils/patioQueue";
+import { selectDiagnosticPatioQueue, sortPatioQueue } from "../utils/patioQueue";
 
 function getResumoItens(ordem) {
   return (ordem.items || [])
@@ -325,7 +325,7 @@ function OficinaAdminPage() {
   );
 
   const aguardandoDiagnostico = useMemo(
-    () => ordens.filter((ordem) => !isServicoRapido(ordem) && podeEntrarNaOficina(ordem) && isAguardandoDiagnostico(ordem)),
+    () => sortPatioQueue(selectDiagnosticPatioQueue(ordens).filter((ordem) => podeEntrarNaOficina(ordem) && isAguardandoDiagnostico(ordem))),
     [ordens],
   );
 
@@ -476,6 +476,14 @@ function OficinaAdminPage() {
 
   return (
     <section className="page-section workshop-tv-page">
+      <div className="workshop-screen-keeper" aria-hidden="true">
+        <span className="workshop-screen-keeper-bike">
+          <span className="workshop-screen-keeper-wheel front" />
+          <span className="workshop-screen-keeper-body" />
+          <span className="workshop-screen-keeper-handle" />
+          <span className="workshop-screen-keeper-wheel rear" />
+        </span>
+      </div>
       {!soundArmed ? (
         <div className="workshop-audio-setup">
           <div>

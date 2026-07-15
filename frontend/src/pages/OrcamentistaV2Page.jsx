@@ -1905,11 +1905,11 @@ function OrcamentistaV2Page() {
                     </div>
                     <div>
                       <span>Diagnostico</span>
-                      <p>{diagnosticoAtual?.causa_identificada || diagnosticoAtual?.descricao_tecnica || "-"}</p>
+                      <p className="preserve-lines">{diagnosticoAtual?.causa_identificada || diagnosticoAtual?.descricao_tecnica || "-"}</p>
                     </div>
                     <div>
                       <span>Pecas</span>
-                      <p>{diagnosticoAtual?.pecas_sugeridas_resumo || "-"}</p>
+                      <p className="preserve-lines">{diagnosticoAtual?.pecas_sugeridas_resumo || "-"}</p>
                     </div>
                     <div>
                       <span>Mecanico</span>

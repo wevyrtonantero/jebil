@@ -230,16 +230,34 @@ function ClientesPage() {
       return;
     }
 
+    if (!clienteForm.nome.trim()) {
+      setError("Informe o nome do cliente.");
+      return;
+    }
+
     setBusy(true);
     setError("");
 
     try {
-      await updateCliente(selectedCliente.id, clienteForm);
+      const clienteAtualizado = await updateCliente(selectedCliente.id, clienteForm);
+      const nextCliente = {
+        ...selectedCliente,
+        ...clienteForm,
+        ...clienteAtualizado,
+      };
+
+      setSelectedCliente(nextCliente);
+      setClienteForm({
+        nome: nextCliente.nome || "",
+        telefone: nextCliente.telefone || "",
+        cpf: nextCliente.cpf || "",
+        observacoes: nextCliente.observacoes || "",
+      });
+      setResultados((current) => current.map((item) => (item.id === nextCliente.id ? { ...item, ...nextCliente } : item)));
+
       if (searchActive) {
         await loadSearch();
       }
-      setSelectedCliente((current) => (current ? { ...current, ...clienteForm } : null));
-      await refreshSelectedCliente();
     } catch (requestError) {
       setError(requestError?.response?.data?.message || "Erro ao atualizar cliente.");
     } finally {
@@ -523,6 +541,12 @@ function ClientesPage() {
               Observacoes
               <textarea value={clienteForm.observacoes} onChange={(event) => setClienteForm((current) => ({ ...current, observacoes: event.target.value }))} />
             </label>
+          </div>
+
+          <div className="button-row">
+            <button type="button" className="primary-button" onClick={handleSaveCliente} disabled={busy}>
+              Salvar alteracoes do cliente
+            </button>
           </div>
 
           <div className="workspace-heading">

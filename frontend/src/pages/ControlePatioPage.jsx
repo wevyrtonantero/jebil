@@ -2,7 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import AppIcon from "../components/common/AppIcon";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
 import { listOperacionalV2, reordenarControlePatioV2 } from "../services/ordemServicoV2Service";
-import { selectPatioQueue, sortPatioQueue } from "../utils/patioQueue";
+import { selectDiagnosticPatioQueue, selectPatioQueue, sortPatioQueue } from "../utils/patioQueue";
+
+const queueOptions = {
+  atendimento: {
+    title: "Fila de atendimento",
+    description: "Defina a sequencia manual da Fila de atendimento.",
+    empty: "Nenhuma moto esta na Fila de atendimento agora.",
+  },
+  diagnostico: {
+    title: "Aguardando diagnostico",
+    description: "Defina a prioridade das motos que aguardam diagnostico do mecanico.",
+    empty: "Nenhuma moto esta aguardando diagnostico agora.",
+  },
+};
 
 function getServiceSummary(ordem) {
   return (ordem.items || [])
@@ -13,17 +26,23 @@ function getServiceSummary(ordem) {
 }
 
 function ControlePatioPage() {
-  const [queue, setQueue] = useState([]);
+  const [activeQueueKey, setActiveQueueKey] = useState("atendimento");
+  const [queues, setQueues] = useState({ atendimento: [], diagnostico: [] });
   const [draggedId, setDraggedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
+  const activeQueueConfig = queueOptions[activeQueueKey];
+  const queue = queues[activeQueueKey] || [];
 
   const loadQueue = useCallback(async () => {
     try {
       const ordens = await listOperacionalV2(100);
-      setQueue(sortPatioQueue(selectPatioQueue(ordens)));
+      setQueues({
+        atendimento: sortPatioQueue(selectPatioQueue(ordens)),
+        diagnostico: sortPatioQueue(selectDiagnosticPatioQueue(ordens)),
+      });
       setError("");
     } catch (requestError) {
       setError(requestError?.response?.data?.message || "Nao foi possivel carregar o controle do patio.");
@@ -43,15 +62,35 @@ function ControlePatioPage() {
   useRealtimeRefresh(loadQueue);
 
   async function saveQueue(nextQueue) {
-    setQueue(nextQueue);
+    const nextQueues = {
+      ...queues,
+      [activeQueueKey]: nextQueue,
+    };
+    const orderedIds = [
+      ...nextQueues[activeQueueKey].map((ordem) => ordem.id),
+      ...Object.entries(nextQueues)
+        .filter(([key]) => key !== activeQueueKey)
+        .flatMap(([, value]) => value.map((ordem) => ordem.id)),
+    ];
+
+    setQueues(nextQueues);
     setSaving(true);
     setError("");
     setFeedback("");
 
     try {
-      await reordenarControlePatioV2(nextQueue.map((ordem) => ordem.id));
-      setQueue(nextQueue.map((ordem, index) => ({ ...ordem, ordem_patio: index + 1 })));
-      setFeedback("Ordem da fila atualizada.");
+      await reordenarControlePatioV2(orderedIds);
+      setQueues((current) => {
+        let position = 1;
+        const updated = {};
+
+        for (const [key, value] of Object.entries({ ...current, [activeQueueKey]: nextQueue })) {
+          updated[key] = value.map((ordem) => ({ ...ordem, ordem_patio: position++ }));
+        }
+
+        return updated;
+      });
+      setFeedback(`Ordem de ${activeQueueConfig.title} atualizada.`);
     } catch (requestError) {
       setError(requestError?.response?.data?.message || "Nao foi possivel salvar a ordem da fila.");
       await loadQueue();
@@ -97,13 +136,24 @@ function ControlePatioPage() {
     void saveQueue(remainingQueue);
   }
 
+  function changeQueue(nextQueueKey) {
+    if (saving || nextQueueKey === activeQueueKey) {
+      return;
+    }
+
+    setActiveQueueKey(nextQueueKey);
+    setDraggedId(null);
+    setFeedback("");
+    setError("");
+  }
+
   return (
     <section className="page-section patio-page">
       <div className="patio-heading">
         <div>
           <p className="eyebrow">Organizacao da oficina</p>
           <h2>Controle de Patio</h2>
-          <p>Defina a sequencia manual da Fila de atendimento.</p>
+          <p>{activeQueueConfig.description}</p>
         </div>
         <div className="patio-heading-side">
           <span className="patio-total">{queue.length} {queue.length === 1 ? "moto" : "motos"}</span>
@@ -113,16 +163,33 @@ function ControlePatioPage() {
         </div>
       </div>
 
+      <div className="patio-mode-switch" role="tablist" aria-label="Escolher fila do patio">
+        {Object.entries(queueOptions).map(([key, option]) => (
+          <button
+            key={key}
+            type="button"
+            className={`patio-mode-button ${activeQueueKey === key ? "active" : ""}`}
+            onClick={() => changeQueue(key)}
+            disabled={saving}
+            role="tab"
+            aria-selected={activeQueueKey === key}
+          >
+            <span>{option.title}</span>
+            <strong>{queues[key]?.length || 0}</strong>
+          </button>
+        ))}
+      </div>
+
       <div className="patio-instruction">
         <AppIcon name="drag" size={22} />
-        <p>Arraste os cards ou use os botoes Subir e Descer. A primeira moto sera a proxima da fila.</p>
+        <p>Arraste os cards ou use os botoes Subir e Descer. A primeira moto fica no topo do card da oficina.</p>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
       {feedback ? <p className="success-message">{feedback}</p> : null}
 
       {loading ? <div className="empty-state">Carregando fila do patio...</div> : null}
-      {!loading && queue.length === 0 ? <div className="empty-state">Nenhuma moto esta na Fila de atendimento agora.</div> : null}
+      {!loading && queue.length === 0 ? <div className="empty-state">{activeQueueConfig.empty}</div> : null}
 
       {!loading && queue.length > 0 ? (
         <div className={`patio-list ${saving ? "is-saving" : ""}`}>
