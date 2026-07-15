@@ -59,6 +59,16 @@ function ControlePatioPage() {
     return () => window.clearTimeout(timeoutId);
   }, [loadQueue]);
 
+  useEffect(() => {
+    function refreshPatioControl() {
+      void loadQueue();
+    }
+
+    window.addEventListener("jebil:controle-patio-refresh", refreshPatioControl);
+
+    return () => window.removeEventListener("jebil:controle-patio-refresh", refreshPatioControl);
+  }, [loadQueue]);
+
   useRealtimeRefresh(loadQueue);
 
   async function saveQueue(nextQueue) {
@@ -149,40 +159,23 @@ function ControlePatioPage() {
 
   return (
     <section className="page-section patio-page">
-      <div className="patio-heading">
-        <div>
-          <p className="eyebrow">Organizacao da oficina</p>
-          <h2>Controle de Patio</h2>
-          <p>{activeQueueConfig.description}</p>
+      <div className="patio-toolbar">
+        <div className="patio-mode-switch" role="tablist" aria-label="Escolher fila do patio">
+          {Object.entries(queueOptions).map(([key, option]) => (
+            <button
+              key={key}
+              type="button"
+              className={`patio-mode-button ${activeQueueKey === key ? "active" : ""}`}
+              onClick={() => changeQueue(key)}
+              disabled={saving}
+              role="tab"
+              aria-selected={activeQueueKey === key}
+            >
+              <span>{option.title}</span>
+              <strong>{queues[key]?.length || 0}</strong>
+            </button>
+          ))}
         </div>
-        <div className="patio-heading-side">
-          <span className="patio-total">{queue.length} {queue.length === 1 ? "moto" : "motos"}</span>
-          <button type="button" className="ghost-button" onClick={() => void loadQueue()} disabled={loading || saving}>
-            Atualizar
-          </button>
-        </div>
-      </div>
-
-      <div className="patio-mode-switch" role="tablist" aria-label="Escolher fila do patio">
-        {Object.entries(queueOptions).map(([key, option]) => (
-          <button
-            key={key}
-            type="button"
-            className={`patio-mode-button ${activeQueueKey === key ? "active" : ""}`}
-            onClick={() => changeQueue(key)}
-            disabled={saving}
-            role="tab"
-            aria-selected={activeQueueKey === key}
-          >
-            <span>{option.title}</span>
-            <strong>{queues[key]?.length || 0}</strong>
-          </button>
-        ))}
-      </div>
-
-      <div className="patio-instruction">
-        <AppIcon name="drag" size={22} />
-        <p>Arraste os cards ou use os botoes Subir e Descer. A primeira moto fica no topo do card da oficina.</p>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}

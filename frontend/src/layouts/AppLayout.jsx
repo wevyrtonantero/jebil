@@ -14,6 +14,7 @@ function AppLayout() {
   const isTvRoute = location.pathname === "/oficina";
   const isImmersiveOperationRoute = location.pathname === "/v2/operacao";
   const isPhotoCaptureRoute = location.pathname === "/recepcao/fotos";
+  const isPatioControlRoute = location.pathname === "/controle-patio";
   const displayName = user?.nome || getRoleLabel(user?.perfil);
   const navigationItems = [
     { to: "/dashboard", label: "Visao geral", icon: "board", show: canAccessDashboard },
@@ -86,6 +87,15 @@ function AppLayout() {
             <h1>{pageTitle}</h1>
           </div>
           <div className="topbar-actions">
+            {isPatioControlRoute ? (
+              <button
+                type="button"
+                className="ghost-button topbar-refresh-button"
+                onClick={() => window.dispatchEvent(new CustomEvent("jebil:controle-patio-refresh"))}
+              >
+                Atualizar
+              </button>
+            ) : null}
             <button
               type="button"
               className="icon-button"

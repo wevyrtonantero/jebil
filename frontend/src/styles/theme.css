@@ -725,6 +725,12 @@
   color: var(--accent);
 }
 
+.topbar-refresh-button {
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 16px;
+}
+
 .page-section {
   display: grid;
   gap: 22px;
@@ -4627,75 +4633,37 @@
 
 .patio-page {
   display: grid;
-  gap: 20px;
-}
-
-.patio-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 26px 28px;
-  border: 1px solid rgba(27, 190, 218, 0.25);
-  border-radius: 26px;
-  background:
-    linear-gradient(135deg, rgba(13, 177, 195, 0.15), transparent 48%),
-    rgba(8, 25, 54, 0.94);
-  box-shadow: var(--shadow-heavy);
-}
-
-.patio-heading h2,
-.patio-heading p {
-  margin: 0;
-}
-
-.patio-heading h2 {
-  margin: 4px 0 6px;
-  font-size: clamp(1.8rem, 3vw, 2.6rem);
-}
-
-.patio-heading > div > p:last-child {
-  color: var(--text-soft);
-}
-
-.patio-heading-side {
-  display: flex;
-  align-items: center;
   gap: 12px;
 }
 
-.patio-total {
-  display: inline-flex;
+.patio-toolbar {
+  display: flex;
   align-items: center;
-  min-height: 48px;
-  padding: 0 18px;
-  border-radius: 16px;
-  color: #72e9f1;
-  background: rgba(14, 180, 199, 0.12);
-  border: 1px solid rgba(14, 180, 199, 0.24);
-  font-weight: 800;
+  gap: 12px;
 }
 
 .patio-mode-switch {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
+  flex: 1;
 }
 
 .patio-mode-button {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 68px;
-  padding: 14px 18px;
-  border-radius: 20px;
+  justify-content: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.045);
   color: var(--text-soft);
   font: inherit;
+  font-weight: 900;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
   transition:
     border-color 160ms ease,
     background 160ms ease,
@@ -4723,32 +4691,20 @@
 
 .patio-mode-button strong {
   display: inline-grid;
-  min-width: 42px;
-  min-height: 42px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
   place-items: center;
-  border-radius: 14px;
-  background: rgba(14, 180, 199, 0.14);
+  border-radius: 999px;
+  background: rgba(14, 180, 199, 0.16);
   color: #8ff2f7;
+  font-size: 0.9rem;
   font-weight: 900;
 }
 
 .patio-mode-button.active strong {
-  background: rgba(255, 133, 30, 0.18);
+  background: rgba(255, 133, 30, 0.2);
   color: #ffd6ad;
-}
-
-.patio-instruction {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
-  color: var(--text-soft);
-  border-left: 3px solid #20c7d6;
-  background: rgba(32, 199, 214, 0.06);
-}
-
-.patio-instruction p {
-  margin: 0;
 }
 
 .patio-list {
@@ -5623,15 +5579,9 @@
     width: 100%;
   }
 
-  .patio-heading {
-    align-items: flex-start;
+  .patio-toolbar {
     flex-direction: column;
-    padding: 22px;
-  }
-
-  .patio-heading-side {
-    width: 100%;
-    justify-content: space-between;
+    align-items: stretch;
   }
 
   .patio-mode-switch {
