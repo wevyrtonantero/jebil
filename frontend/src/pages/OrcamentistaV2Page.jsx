@@ -67,12 +67,28 @@ function isExternalNumberValid(value = "") {
 }
 
 function normalizeCurrencyInput(value) {
-  const normalized = String(value || "").replace(",", ".");
-  return normalized.replace(/[^\d.]/g, "");
+  const digits = String(value || "").replace(/\D/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  return (Number(digits) / 100).toFixed(2);
 }
 
 function toMoney(value) {
   return Number(value || 0).toFixed(2);
+}
+
+function formatCurrencyDisplay(value) {
+  if (String(value ?? "").trim() === "") {
+    return "";
+  }
+
+  return Number(value || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function resolveOrderItemUnitValue(item) {
@@ -151,6 +167,13 @@ function isAtendimentoRapido(order) {
 
 function getDraftableOrderItems(order) {
   return (order?.items || []).filter((item) => item.descricao && item.descricao !== "Diagnostico inicial" && ["AGUARDANDO_ORCAMENTO", "AGUARDANDO_AUTORIZACAO", "PRONTO_PARA_EXECUTAR"].includes(item.status_item));
+}
+
+function getClientRequestedItems(order) {
+  return (order?.items || [])
+    .filter((item) => item.descricao && item.descricao !== "Diagnostico inicial")
+    .filter((item) => item.status_item !== "CANCELADO")
+    .filter((item) => item.origem === "SOLICITADO_CLIENTE");
 }
 
 function getFallbackOrderValue(order) {
@@ -528,7 +551,7 @@ function formatCountdown(value = "", nowTs) {
 
 function buildWhatsappTextoOrcamento(ordem, orcamento) {
   const items = (orcamento?.items || [])
-    .map((item) => `- ${item.descricao}: ${item.quantidade} x R$ ${toMoney(item.valor_peca || item.valor_total || 0)} = R$ ${toMoney(item.valor_total || 0)}`)
+    .map((item) => `- ${item.descricao}: ${item.quantidade} x R$ ${formatCurrencyDisplay(item.valor_peca || item.valor_total || 0)} = R$ ${formatCurrencyDisplay(item.valor_total || 0)}`)
     .join("\n");
 
   return [
@@ -538,7 +561,7 @@ function buildWhatsappTextoOrcamento(ordem, orcamento) {
     "",
     items || "Sem itens detalhados.",
     "",
-    `Total: R$ ${toMoney(orcamento?.valor_total || 0)}`,
+    `Total: R$ ${formatCurrencyDisplay(orcamento?.valor_total || 0)}`,
     orcamento?.observacoes ? `Observacoes: ${orcamento.observacoes}` : null,
   ]
     .filter(Boolean)
@@ -1463,7 +1486,7 @@ function OrcamentistaV2Page() {
                         <strong>
                           <ExternalBudgetLink orcamento={latestOrcamento} fallback={getDisplayedBudgetNumber(ordem)} />
                         </strong>
-                        <span>R$ {toMoney(getDisplayedBudgetTotal(ordem))}</span>
+                        <span>R$ {formatCurrencyDisplay(getDisplayedBudgetTotal(ordem))}</span>
                       </div>
 
                       <button
@@ -1611,7 +1634,7 @@ function OrcamentistaV2Page() {
                         </p>
                         <div className="recepcao-ready-meta">
                           <small>Pronta desde {formatReadyTime(ordem.pronta_retirada_em || ordem.atualizado_em)}</small>
-                          <strong className="recepcao-payment-amount">Total R$ {toMoney(totalAmount)}</strong>
+                          <strong className="recepcao-payment-amount">Total R$ {formatCurrencyDisplay(totalAmount)}</strong>
                         </div>
                       </div>
                       <div className="recepcao-ready-actions">
@@ -1866,7 +1889,7 @@ function OrcamentistaV2Page() {
             </button>
             <div className="orcamento-total-footer">
               <span>Total</span>
-              <strong>R$ {toMoney(totalOrcamento)}</strong>
+              <strong>R$ {formatCurrencyDisplay(totalOrcamento)}</strong>
             </div>
             <button
               type="button"
@@ -1920,6 +1943,22 @@ function OrcamentistaV2Page() {
                       <p>{selectedOrder.data_prometida ? formatDateLabel(selectedOrder.data_prometida) : "-"}</p>
                     </div>
                   </div>
+                  <div className="requested-items-panel orcamento-requested-items">
+                    <strong>Itens solicitados pelo cliente</strong>
+                    {getClientRequestedItems(selectedOrder).length ? (
+                      <div className="requested-items-list">
+                        {getClientRequestedItems(selectedOrder).map((item) => (
+                          <div className="requested-item-row" key={item.id}>
+                            <span>{item.descricao}</span>
+                            <small>Qtd {Number(item.quantidade || 1)}</small>
+                            <strong>R$ {formatCurrencyDisplay(item.valor_total || 0)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p>Nenhum item informado na recepcao.</p>
+                    )}
+                  </div>
                 </section>
               );
             })()}
@@ -1942,8 +1981,8 @@ function OrcamentistaV2Page() {
               <label className={`field-label required-budget-field ${String(orcamentoForm.valor_total || "").trim() ? "is-valid" : "is-invalid"}`}>
                 Valor total *
                 <input
-                  value={orcamentoForm.valor_total}
-                  placeholder="0.00"
+                  value={formatCurrencyDisplay(orcamentoForm.valor_total)}
+                  placeholder="0,00"
                   inputMode="decimal"
                   onChange={(event) => setOrcamentoForm((current) => ({ ...current, valor_total: normalizeCurrencyInput(event.target.value) }))}
                 />
@@ -1989,7 +2028,7 @@ function OrcamentistaV2Page() {
                   <strong>
                     <ExternalBudgetLink orcamento={getLatestOrcamento(selectedOrder)} />
                   </strong>
-                  <p>R$ {toMoney(getLatestOrcamento(selectedOrder)?.valor_total || 0)}</p>
+                  <p>R$ {formatCurrencyDisplay(getLatestOrcamento(selectedOrder)?.valor_total || 0)}</p>
                   <small>{getLatestOrcamento(selectedOrder)?.status_orcamento === "ENVIADO" ? "ENVIADO" : "RASCUNHO"}</small>
                 </div>
                 <div className="row-actions stacked">

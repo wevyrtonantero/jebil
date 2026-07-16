@@ -31,6 +31,8 @@ const initialItem = () => ({
   pagamento_status: "PENDENTE",
 });
 
+const SOS_DISPLACEMENT_DESCRIPTION = "Deslocamento para socorro";
+
 const colorOptions = [
   "Preta",
   "Branca",
@@ -108,12 +110,28 @@ function normalizePlateValue(value) {
 }
 
 function normalizeCurrencyInput(value) {
-  const normalized = String(value || "").replace(",", ".");
-  return normalized.replace(/[^\d.]/g, "");
+  const digits = String(value || "").replace(/\D/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  return (Number(digits) / 100).toFixed(2);
 }
 
 function toMoney(value) {
   return Number(value || 0).toFixed(2);
+}
+
+function formatCurrencyDisplay(value) {
+  if (!hasFilledValue(value)) {
+    return "";
+  }
+
+  return Number(value || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function calculateItemTotal(quantidade, valorUnitario) {
@@ -122,6 +140,31 @@ function calculateItemTotal(quantidade, valorUnitario) {
   }
 
   return toMoney(Number(quantidade || 0) * Number(valorUnitario || 0));
+}
+
+function isSosDisplacementItem(item) {
+  return Boolean(item?.is_sos_displacement) || String(item?.descricao || "").trim().toLowerCase() === SOS_DISPLACEMENT_DESCRIPTION.toLowerCase();
+}
+
+function createSosDisplacementItem(item = {}) {
+  const quantidade = item.quantidade || "1";
+  const valorUnitario = item.valor_unitario || "";
+
+  return {
+    ...initialItem(),
+    ...item,
+    descricao: SOS_DISPLACEMENT_DESCRIPTION,
+    quantidade,
+    valor_unitario: valorUnitario,
+    valor_total: calculateItemTotal(quantidade, valorUnitario),
+    pagamento_status: item.pagamento_status || "PENDENTE",
+    is_sos_displacement: true,
+  };
+}
+
+function removeSosDisplacementItems(items = []) {
+  const filtered = items.filter((item) => !isSosDisplacementItem(item));
+  return filtered.length ? filtered : [initialItem()];
 }
 
 function hasFilledValue(value) {
@@ -174,6 +217,44 @@ function isAtendimentoRapido(ordem) {
     itensValidos.length > 0 &&
     itensValidos.every((item) => Boolean(item.execucao_direta) && !Boolean(item.exige_diagnostico))
   );
+}
+
+function getExecucaoForItem(order, itemId) {
+  return (order?.execucoes || []).find((execucao) => Number(execucao.item_ordem_servico_id) === Number(itemId)) || null;
+}
+
+function parseQuickPartReference(value = "") {
+  const text = String(value || "").trim();
+
+  if (!text) {
+    return { codigo: "", descricao: "" };
+  }
+
+  const codigo = text.match(/^CODIGO:\s*(.+)$/im)?.[1]?.trim() || "";
+  const descricao = text.match(/^DESCRICAO:\s*(.+)$/im)?.[1]?.trim() || "";
+
+  if (codigo || descricao) {
+    return { codigo, descricao };
+  }
+
+  return { codigo: "", descricao: text };
+}
+
+function getQuickServiceChargeItems(order) {
+  if (!isAtendimentoRapido(order)) {
+    return [];
+  }
+
+  return (order?.items || [])
+    .filter((item) => item.status_item !== "CANCELADO")
+    .filter((item) => String(item.descricao || "").trim().toLowerCase() !== "diagnostico inicial");
+}
+
+function hasPendingChargeItems(order) {
+  return (order?.items || [])
+    .filter((item) => item.status_item !== "CANCELADO")
+    .filter((item) => String(item.descricao || "").trim().toLowerCase() !== "diagnostico inicial")
+    .some((item) => item.pagamento_status !== "PAGO");
 }
 
 function broadcastQuickServiceAlert(ordem, motocicleta) {
@@ -251,8 +332,17 @@ function RecepcaoV2Page() {
 
     try {
       const data = await listOrdensServicoV2({ status_geral: "PRONTA_PARA_RETIRADA" });
-      const paidQuickOrders = data.filter((ordem) => isAtendimentoRapido(ordem) && Number(ordem.valor_pendente_ordem || 0) <= 0);
-      const visibleOrders = data.filter((ordem) => !(isAtendimentoRapido(ordem) && Number(ordem.valor_pendente_ordem || 0) <= 0));
+      const detailedOrders = await Promise.all(
+        data.map(async (ordem) => {
+          try {
+            return await getOrdemServicoV2(ordem.id);
+          } catch {
+            return ordem;
+          }
+        }),
+      );
+      const paidQuickOrders = detailedOrders.filter((ordem) => isAtendimentoRapido(ordem) && !hasPendingChargeItems(ordem));
+      const visibleOrders = detailedOrders.filter((ordem) => !(isAtendimentoRapido(ordem) && !hasPendingChargeItems(ordem)));
 
       setReadyOrders(visibleOrders);
 
@@ -300,7 +390,12 @@ function RecepcaoV2Page() {
   }
 
   async function handleConfirmQuickPayment(ordem) {
-    const confirmed = window.confirm(`Confirmar pagamento de R$ ${toMoney(ordem.valor_pendente_ordem || 0)} e finalizar a retirada?`);
+    const pendingAmount = Number(ordem.valor_pendente_ordem || 0);
+    const confirmed = window.confirm(
+      pendingAmount > 0
+        ? `Confirmar pagamento de R$ ${formatCurrencyDisplay(pendingAmount)} e finalizar a retirada?`
+        : "Confirmar pagamento do servico rapido e finalizar a retirada?",
+    );
 
     if (!confirmed) {
       return;
@@ -329,6 +424,28 @@ function RecepcaoV2Page() {
     }
   }
 
+  async function copyQuickPartInfo(text, label = "Informacao") {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+
+      setReadyFeedback(`${label} copiado.`);
+    } catch {
+      setReadyFeedback("Nao foi possivel copiar automaticamente. Selecione e copie manualmente.");
+    }
+  }
+
   function buildEnderecoRetirada() {
     return [
       form.endereco_retirada_rua?.trim(),
@@ -350,13 +467,17 @@ function RecepcaoV2Page() {
           endereco_retirada_numero: "",
           endereco_retirada_bairro: "",
           endereco_retirada_cidade: "",
+          items: removeSosDisplacementItems(current.items),
         };
       }
+
+      const hasSosItem = current.items.some(isSosDisplacementItem);
 
       return {
         ...current,
         buscar_moto: true,
         dispensa_queixa_principal: false,
+        items: hasSosItem ? current.items.map((item) => (isSosDisplacementItem(item) ? createSosDisplacementItem(item) : item)) : [createSosDisplacementItem(), ...current.items],
       };
     });
   }
@@ -370,6 +491,7 @@ function RecepcaoV2Page() {
       endereco_retirada_numero: current.dispensa_queixa_principal ? current.endereco_retirada_numero : "",
       endereco_retirada_bairro: current.dispensa_queixa_principal ? current.endereco_retirada_bairro : "",
       endereco_retirada_cidade: current.dispensa_queixa_principal ? current.endereco_retirada_cidade : "",
+      items: current.dispensa_queixa_principal ? current.items : removeSosDisplacementItems(current.items),
     }));
   }
 
@@ -417,6 +539,10 @@ function RecepcaoV2Page() {
           return item;
         }
 
+        if (isSosDisplacementItem(item) && field === "descricao") {
+          return createSosDisplacementItem(item);
+        }
+
         const updatedItem = {
           ...item,
           [field]: value,
@@ -443,7 +569,7 @@ function RecepcaoV2Page() {
     setSuccessData(null);
     setForm((current) => ({
       ...current,
-      items: current.items.filter((_, itemIndex) => itemIndex !== index),
+      items: current.items.filter((item, itemIndex) => itemIndex !== index || isSosDisplacementItem(item)),
     }));
   }
 
@@ -587,6 +713,17 @@ function RecepcaoV2Page() {
       const message = "Preencha rua, numero, bairro e cidade quando o SOS estiver ativo.";
       setError(message);
       return false;
+    }
+
+    if (form.buscar_moto) {
+      const sosItem = form.items.find(isSosDisplacementItem);
+      const sosValue = Number(sosItem?.valor_total || 0);
+
+      if (!sosItem || sosValue <= 0) {
+        const message = "Informe o valor do deslocamento para socorro antes de confirmar.";
+        setError(message);
+        return false;
+      }
     }
 
     if (form.dispensa_queixa_principal && (!form.items.length || form.items.some((item) => !hasFilledValue(item.descricao)))) {
@@ -891,6 +1028,7 @@ function RecepcaoV2Page() {
               const budgetPdfUrl = getPublicAssetUrl(ordem.orcamento_pdf_url);
               const pendingAmount = Number(ordem.valor_pendente_ordem || 0);
               const totalAmount = Number(ordem.valor_total_ordem || 0);
+              const hasQuickPendingPayment = isAtendimentoRapido(ordem) && hasPendingChargeItems(ordem);
 
               return (
                 <article className="recepcao-ready-card" key={ordem.id}>
@@ -908,11 +1046,57 @@ function RecepcaoV2Page() {
                     </p>
                     <div className="recepcao-ready-meta">
                       <small>Pronta desde {formatReadyTime(ordem.pronta_retirada_em || ordem.atualizado_em)}</small>
-                      <strong className="recepcao-payment-amount">Total R$ {toMoney(totalAmount)}</strong>
+                      <strong className="recepcao-payment-amount">Total R$ {formatCurrencyDisplay(totalAmount)}</strong>
                     </div>
+                    {getQuickServiceChargeItems(ordem).length ? (
+                      <div className="recepcao-quick-charge-list">
+                        {getQuickServiceChargeItems(ordem).map((item) => {
+                          const execucao = getExecucaoForItem(ordem, item.id);
+                          const reference = parseQuickPartReference(execucao?.descricao_execucao);
+
+                          return (
+                            <div className="recepcao-quick-charge-row" key={item.id}>
+                              <span>{item.descricao}</span>
+                              <strong className="recepcao-copyable-value">
+                                <span className="recepcao-copyable-text">{reference.codigo || "Sem codigo"}</span>
+                                {reference.codigo ? (
+                                  <button
+                                    type="button"
+                                    className="icon-button recepcao-copy-part-button"
+                                    onClick={() => void copyQuickPartInfo(reference.codigo, "Codigo")}
+                                    title="Copiar codigo"
+                                    aria-label="Copiar codigo"
+                                  >
+                                    <AppIcon name="copy" size={15} />
+                                  </button>
+                                ) : null}
+                              </strong>
+                              <em className="recepcao-copyable-value">
+                                <span className="recepcao-copyable-text">{reference.descricao || "Sem descricao"}</span>
+                                {reference.descricao ? (
+                                  <button
+                                    type="button"
+                                    className="icon-button recepcao-copy-part-button"
+                                    onClick={() => void copyQuickPartInfo(reference.descricao, "Descricao")}
+                                    title="Copiar descricao"
+                                    aria-label="Copiar descricao"
+                                  >
+                                    <AppIcon name="copy" size={15} />
+                                  </button>
+                                ) : null}
+                              </em>
+                              <small title={execucao?.mecanico_principal_nome || "Mecanico nao informado"}>
+                                <AppIcon name="mechanic" size={15} />
+                                {execucao?.mecanico_principal_nome || "Nao informado"}
+                              </small>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="recepcao-ready-actions">
-                    {pendingAmount > 0 ? (
+                    {pendingAmount > 0 || hasQuickPendingPayment ? (
                       <button
                         type="button"
                         className="recepcao-paid-button"
@@ -978,6 +1162,12 @@ function RecepcaoV2Page() {
             </div>
           </div>
           {error ? <p className="form-error recepcao-top-error">{error}</p> : null}
+          {form.buscar_moto ? (
+            <div className="sos-charge-alert">
+              <AppIcon name="sos" size={18} />
+              <strong>Cobrar o deslocamento para socorro.</strong>
+            </div>
+          ) : null}
 
           <div className="field-grid two-up">
             <label className="field-label">
@@ -1095,17 +1285,24 @@ function RecepcaoV2Page() {
 
           <div className="service-list-card">
             {form.items.map((item, index) => (
-              <div className="service-line recepcao-service-line" key={`item-form-${index}`}>
+              <div className={`service-line recepcao-service-line ${isSosDisplacementItem(item) ? "is-sos-fee" : ""}`} key={`item-form-${index}`}>
                 <span className="service-line-index">{String(index + 1).padStart(2, "0")}</span>
                 <input
                   className="service-line-input"
                   list="service-options-v2"
                   value={item.descricao}
                   placeholder="Ex.: Troca de oleo, limpeza de carburador, pastilha de freio"
+                  readOnly={isSosDisplacementItem(item)}
                   onFocus={() => {
-                    void loadItemSuggestions(item.descricao).catch(() => {});
+                    if (!isSosDisplacementItem(item)) {
+                      void loadItemSuggestions(item.descricao).catch(() => {});
+                    }
                   }}
                   onChange={(event) => {
+                    if (isSosDisplacementItem(item)) {
+                      return;
+                    }
+
                     const nextValue = event.target.value;
                     updateItem(index, "descricao", nextValue);
                     if (!nextValue || nextValue.length >= 2) {
@@ -1120,14 +1317,14 @@ function RecepcaoV2Page() {
                   onChange={(event) => updateItem(index, "quantidade", event.target.value.replace(/\D/g, ""))}
                 />
                 <input
-                  value={item.valor_unitario}
+                  value={formatCurrencyDisplay(item.valor_unitario)}
                   inputMode="decimal"
-                  placeholder="Unit."
+                  placeholder="0,00"
                   onChange={(event) => updateItem(index, "valor_unitario", normalizeCurrencyInput(event.target.value))}
                 />
                 <input
-                  value={item.valor_total}
-                  placeholder="Total"
+                  value={formatCurrencyDisplay(item.valor_total)}
+                  placeholder="0,00"
                   readOnly
                 />
                 <button
@@ -1141,11 +1338,11 @@ function RecepcaoV2Page() {
                 </button>
                 <button
                   type="button"
-                  className={`icon-button danger-card-button inline-delete-button ${form.items.length === 1 ? "is-disabled" : ""}`}
+                  className={`icon-button danger-card-button inline-delete-button ${form.items.length === 1 || isSosDisplacementItem(item) ? "is-disabled" : ""}`}
                   onClick={() => removeItem(index)}
                   aria-label="Remover linha"
-                  title={form.items.length === 1 ? "A lista precisa ter ao menos uma linha" : "Remover linha"}
-                  disabled={form.items.length === 1}
+                  title={isSosDisplacementItem(item) ? "Linha obrigatoria quando SOS esta ativo" : form.items.length === 1 ? "A lista precisa ter ao menos uma linha" : "Remover linha"}
+                  disabled={form.items.length === 1 || isSosDisplacementItem(item)}
                 >
                   <AppIcon name="trash" size={16} />
                 </button>
@@ -1153,7 +1350,7 @@ function RecepcaoV2Page() {
             ))}
           </div>
           <p className="field-note">
-            {form.items.filter((item) => item.descricao.trim()).length} item(ns) na lista • Previsao inicial de R$ {toMoney(totalPrevioItens)}
+            {form.items.filter((item) => item.descricao.trim()).length} item(ns) na lista • Previsao inicial de R$ {formatCurrencyDisplay(totalPrevioItens)}
           </p>
 
           {!form.dispensa_queixa_principal ? (
@@ -1271,7 +1468,7 @@ function RecepcaoV2Page() {
           <article className="detail-row">
             <strong>Itens</strong>
             <p>
-              {form.items.filter((item) => item.descricao.trim()).length} linha(s) • R$ {toMoney(totalPrevioItens)}
+              {form.items.filter((item) => item.descricao.trim()).length} linha(s) • R$ {formatCurrencyDisplay(totalPrevioItens)}
             </p>
           </article>
         </div>

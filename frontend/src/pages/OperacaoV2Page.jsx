@@ -174,6 +174,42 @@ function itemHasResponsibleMechanic(order, itemId) {
   return Boolean(execucao.mecanico_principal_id || (execucao.mecanicos || []).some((mecanico) => mecanico.mecanico_id));
 }
 
+function itemHasQuickPartReference(order, itemId) {
+  const reference = parseQuickPartReference(getExecucaoForItem(order, itemId)?.descricao_execucao);
+  return Boolean(reference.codigo && reference.descricao);
+}
+
+function parseQuickPartReference(value = "") {
+  const text = String(value || "").trim();
+
+  if (!text) {
+    return { codigo: "", descricao: "" };
+  }
+
+  const codigo = text.match(/^CODIGO:\s*(.+)$/im)?.[1]?.trim() || "";
+  const descricao = text.match(/^DESCRICAO:\s*(.+)$/im)?.[1]?.trim() || "";
+
+  if (codigo || descricao) {
+    return { codigo, descricao };
+  }
+
+  return { codigo: "", descricao: text };
+}
+
+function buildQuickPartReference(codigo, descricao) {
+  return [`CODIGO: ${String(codigo || "").trim()}`, `DESCRICAO: ${String(descricao || "").trim()}`].join("\n");
+}
+
+function formatQuickPartReference(value = "") {
+  const reference = parseQuickPartReference(value);
+
+  if (reference.codigo && reference.descricao) {
+    return `${reference.codigo} - ${reference.descricao}`;
+  }
+
+  return reference.codigo || reference.descricao || "";
+}
+
 function getActiveItems(order) {
   return (order?.items || []).filter((item) => !["CONCLUIDO", "CANCELADO"].includes(item.status_item));
 }
@@ -182,6 +218,13 @@ function getOperationalItems(order) {
   const items = (order?.items || []).filter((item) => !["CANCELADO"].includes(item.status_item));
   const nonDiagnosticItems = items.filter((item) => !isDiagnosticPlaceholderItem(item));
   return nonDiagnosticItems.length ? nonDiagnosticItems : items;
+}
+
+function getClientRequestedItems(order) {
+  return (order?.items || [])
+    .filter((item) => !["CANCELADO"].includes(item.status_item))
+    .filter((item) => !isDiagnosticPlaceholderItem(item))
+    .filter((item) => item.origem === "SOLICITADO_CLIENTE");
 }
 
 function isAtendimentoRapido(order) {
@@ -202,6 +245,10 @@ function getPendingPaymentTotal(order) {
   return getOperationalItems(order)
     .filter((item) => item.pagamento_status !== "PAGO")
     .reduce((total, item) => total + Number(item.valor_total || 0), 0);
+}
+
+function hasPendingPaymentItems(order) {
+  return getOperationalItems(order).some((item) => item.pagamento_status !== "PAGO");
 }
 
 function toMoney(value) {
@@ -239,7 +286,8 @@ function canFinalizeOrder(order) {
   return (
     activeItems.length > 0 &&
     activeItems.every((item) => ["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item)) &&
-    activeItems.every((item) => itemHasResponsibleMechanic(order, item.id))
+    activeItems.every((item) => itemHasResponsibleMechanic(order, item.id)) &&
+    (!isAtendimentoRapido(order) || activeItems.every((item) => itemHasQuickPartReference(order, item.id)))
   );
 }
 
@@ -253,9 +301,18 @@ function getFinalizeBlockReason(order) {
   const blockedItem = activeItems.find((item) => item.status_item !== "EM_EXECUCAO");
   const blockedRealItem = activeItems.find((item) => !["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item));
   const itemSemMecanico = activeItems.find((item) => !itemHasResponsibleMechanic(order, item.id));
+  const itemSemReferenciaRapida = isAtendimentoRapido(order) ? activeItems.find((item) => !itemHasQuickPartReference(order, item.id)) : null;
 
   if (!blockedRealItem) {
-    return itemSemMecanico ? `Vincule o mecanico ao servico ${itemSemMecanico.descricao} antes de finalizar.` : "";
+    if (itemSemMecanico) {
+      return `Vincule o mecanico ao servico ${itemSemMecanico.descricao} antes de finalizar.`;
+    }
+
+    if (itemSemReferenciaRapida) {
+      return `Informe codigo/modelo da peca do servico ${itemSemReferenciaRapida.descricao} antes de finalizar.`;
+    }
+
+    return "";
   }
 
   return `${blockedRealItem.descricao} ainda esta em ${getItemStatusLabel(blockedRealItem.status_item).toLowerCase()}.`;
@@ -278,7 +335,12 @@ function getItemStatusLabel(status = "") {
 }
 
 function formatEstimatedServiceTime(periods) {
-  const normalizedPeriods = Math.max(1, Number(periods) || 1);
+  const normalizedPeriods = Math.max(0, Number(periods) || 0);
+
+  if (!normalizedPeriods) {
+    return "0";
+  }
+
   const fullDays = Math.floor(normalizedPeriods / 2);
   const hasHalfPeriod = normalizedPeriods % 2 === 1;
 
@@ -290,12 +352,25 @@ function formatEstimatedServiceTime(periods) {
   return hasHalfPeriod ? `${daysLabel} e meio` : daysLabel;
 }
 
+function formatRequestedItemsForMessage(order) {
+  const items = getClientRequestedItems(order);
+
+  if (!items.length) {
+    return "";
+  }
+
+  return items
+    .map((item) => `- ${item.descricao} | qtd ${Number(item.quantidade || 1)} | R$ ${toMoney(item.valor_total || 0)}`)
+    .join("\n");
+}
+
 function buildDiagnosticoWhatsappMessage(order, diagnosticoTexto, pecasRecomendadas, mecanicoNome, estimatedPeriods) {
   return [
     "Diagnostico concluido para orcamento.",
     `Placa: ${order?.motocicleta_placa || "Nao informada"}`,
     `Modelo: ${order?.motocicleta_marca ? `${order.motocicleta_marca} ` : ""}${order?.motocicleta_modelo || "Nao informado"}`.trim(),
     `Queixa: ${String(order?.queixa_principal || "").trim() || "Nao informada"}`,
+    formatRequestedItemsForMessage(order) ? `Itens solicitados pelo cliente:\n${formatRequestedItemsForMessage(order)}` : null,
     `Defeito encontrado: ${diagnosticoTexto}`,
     pecasRecomendadas ? `Pecas recomendadas: ${pecasRecomendadas}` : null,
     `Tempo estimado do servico: ${formatEstimatedServiceTime(estimatedPeriods)}`,
@@ -375,12 +450,14 @@ function OperacaoV2Page() {
     mecanico_principal_id: "",
     mecanicos_auxiliares_ids: [],
     descricao_execucao: "",
+    peca_codigo: "",
+    peca_descricao: "",
   });
   const [diagnosticoForm, setDiagnosticoForm] = useState({
     descricao: "",
     pecas_recomendadas: "",
     mecanico_principal_id: "",
-    periodos_estimados: 1,
+    periodos_estimados: 0,
   });
   const [partForm, setPartForm] = useState({
     descricao_peca: "",
@@ -472,13 +549,14 @@ function OperacaoV2Page() {
       descricao: diagnosticoAtivo?.causa_identificada || diagnosticoAtivo?.descricao_tecnica || "",
       pecas_recomendadas: diagnosticoAtivo?.pecas_sugeridas_resumo || "",
       mecanico_principal_id: diagnosticoAtivo?.mecanico_principal_id ? String(diagnosticoAtivo.mecanico_principal_id) : "",
-      periodos_estimados: 1,
+      periodos_estimados: 0,
     });
     setDetailOpen(true);
   }
 
   function openMechanicAssignment(item) {
     const execucao = getExecucaoForItem(selectedOrder, item.id);
+    const quickReference = parseQuickPartReference(execucao?.descricao_execucao);
     const selectedIds = [];
 
     if (execucao?.mecanico_principal_id) {
@@ -498,6 +576,8 @@ function OperacaoV2Page() {
       mecanico_principal_id: selectedIds[0] || "",
       mecanicos_auxiliares_ids: selectedIds.slice(1),
       descricao_execucao: execucao?.descricao_execucao || "",
+      peca_codigo: quickReference.codigo,
+      peca_descricao: quickReference.descricao,
     });
     setAssigningItem(item);
     setMechanicOpen(true);
@@ -535,6 +615,7 @@ function OperacaoV2Page() {
     const itensAtivos = getOperationalItems(selectedOrder).filter((item) => item.status_item !== "CONCLUIDO");
     const itensBloqueados = itensAtivos.filter((item) => !["PRONTO_PARA_EXECUTAR", "EM_EXECUCAO"].includes(item.status_item));
     const itemSemMecanico = itensAtivos.find((item) => !itemHasResponsibleMechanic(selectedOrder, item.id));
+    const itemSemReferenciaRapida = isAtendimentoRapido(selectedOrder) ? itensAtivos.find((item) => !itemHasQuickPartReference(selectedOrder, item.id)) : null;
 
     if (!itensAtivos.length) {
       setError("Nenhum servico ativo encontrado para finalizar.");
@@ -548,6 +629,11 @@ function OperacaoV2Page() {
 
     if (itemSemMecanico) {
       setError(`Vincule o mecanico ao servico ${itemSemMecanico.descricao} antes de finalizar.`);
+      return;
+    }
+
+    if (itemSemReferenciaRapida) {
+      setError(`Informe codigo/modelo da peca do servico ${itemSemReferenciaRapida.descricao} antes de finalizar.`);
       return;
     }
 
@@ -565,19 +651,20 @@ function OperacaoV2Page() {
       const ordemAtualizada = await getOrdemServicoV2(selectedOrder.id);
       const pendingAmount = getPendingPaymentTotal(ordemAtualizada);
       const isQuickService = isAtendimentoRapido(ordemAtualizada);
+      const hasPendingQuickPayment = isQuickService && hasPendingPaymentItems(ordemAtualizada);
 
       setOrdens((current) => current.map((ordem) => (ordem.id === ordemAtualizada.id ? ordemAtualizada : ordem)));
       setDetailOpen(false);
       setSelectedOrder(null);
 
-      if (isQuickService && pendingAmount > 0) {
+      if (hasPendingQuickPayment) {
         window.alert("Servico rapido finalizado.\nOrientar o cliente a fazer o pagamento na recepcao.");
       }
 
       setFeedback(
         ordemAtualizada.status_geral === "PRONTA_PARA_RETIRADA"
           ? isQuickService
-            ? pendingAmount > 0
+            ? hasPendingQuickPayment
               ? "Servico rapido finalizado e enviado para a recepcao. Oriente o cliente a fazer o pagamento na recepcao."
               : "Servico rapido finalizado e enviado para a recepcao. Pagamento confirmado."
             : "Moto finalizada e enviada para motos prontas."
@@ -597,6 +684,11 @@ function OperacaoV2Page() {
       return;
     }
 
+    if (isAtendimentoRapido(selectedOrder) && (!execucaoForm.peca_codigo.trim() || !execucaoForm.peca_descricao.trim())) {
+      setError("Informe o codigo e a descricao/modelo da peca aplicada neste servico rapido.");
+      return;
+    }
+
     setBusy(true);
     setError("");
 
@@ -606,7 +698,9 @@ function OperacaoV2Page() {
       await atribuirExecucaoV2(selectedOrder.id, assigningItem.id, {
         mecanico_principal_id: Number(mecanicoPrincipalId),
         mecanicos_auxiliares_ids: mecanicosAuxiliaresIds.map((id) => Number(id)),
-        descricao_execucao: execucaoForm.descricao_execucao.trim() || null,
+        descricao_execucao: isAtendimentoRapido(selectedOrder)
+          ? buildQuickPartReference(execucaoForm.peca_codigo, execucaoForm.peca_descricao)
+          : execucaoForm.descricao_execucao.trim() || null,
       });
 
       if (assigningItem.status_item === "PRONTO_PARA_EXECUTAR") {
@@ -690,8 +784,8 @@ function OperacaoV2Page() {
     const mecanicoPrincipalId = diagnosticoForm.mecanico_principal_id;
     const diagnosticoItem = getDiagnosticItem(selectedOrder);
 
-    if (!selectedOrder || !diagnosticoItem || !diagnosticoTexto || !mecanicoPrincipalId) {
-      setError("Preencha o diagnostico e assine com o mecanico responsavel antes de salvar.");
+    if (!selectedOrder || !diagnosticoItem || !diagnosticoTexto || !mecanicoPrincipalId || Number(diagnosticoForm.periodos_estimados || 0) <= 0) {
+      setError("Preencha o diagnostico, o mecanico responsavel e o tempo estimado antes de salvar.");
       return;
     }
 
@@ -749,7 +843,7 @@ function OperacaoV2Page() {
       await refreshSelectedOrder(selectedOrder.id);
       setDetailOpen(false);
       setSelectedOrder(null);
-      setDiagnosticoForm({ descricao: "", pecas_recomendadas: "", mecanico_principal_id: "", periodos_estimados: 1 });
+      setDiagnosticoForm({ descricao: "", pecas_recomendadas: "", mecanico_principal_id: "", periodos_estimados: 0 });
       setFeedback("Diagnostico salvo e enviado para o orcamentista.");
     } catch (requestError) {
       setError(requestError?.response?.data?.message || "Nao foi possivel salvar o diagnostico.");
@@ -899,7 +993,7 @@ function OperacaoV2Page() {
       <Modal
         open={mechanicOpen}
         onClose={() => setMechanicOpen(false)}
-        title="Equipe da moto"
+        title={isAtendimentoRapido(selectedOrder) ? "Mecanico e peca aplicada" : "Equipe da moto"}
         subtitle={assigningItem ? assigningItem.descricao : "Selecione um ou mais mecanicos."}
         size="medium"
         zIndex={1100}
@@ -912,7 +1006,11 @@ function OperacaoV2Page() {
               type="button"
               className="primary-button"
               onClick={() => void handleSalvarResponsaveis()}
-              disabled={busy || ![execucaoForm.mecanico_principal_id, ...execucaoForm.mecanicos_auxiliares_ids].filter(Boolean).length}
+              disabled={
+                busy ||
+                ![execucaoForm.mecanico_principal_id, ...execucaoForm.mecanicos_auxiliares_ids].filter(Boolean).length ||
+                (isAtendimentoRapido(selectedOrder) && (!execucaoForm.peca_codigo.trim() || !execucaoForm.peca_descricao.trim()))
+              }
             >
               Salvar servico
             </button>
@@ -933,15 +1031,36 @@ function OperacaoV2Page() {
             })}
           </div>
 
-          <label className="field-label">
-            Observacao
-            <textarea
-              rows={4}
-              value={execucaoForm.descricao_execucao}
-              onChange={(event) => setExecucaoForm((current) => ({ ...current, descricao_execucao: event.target.value }))}
-              placeholder="Relate algo importante sobre este servico"
-            />
-          </label>
+          {isAtendimentoRapido(selectedOrder) ? (
+            <div className="field-grid two-up">
+              <label className="field-label">
+                Codigo da peca *
+                <input
+                  value={execucaoForm.peca_codigo}
+                  onChange={(event) => setExecucaoForm((current) => ({ ...current, peca_codigo: event.target.value }))}
+                  placeholder="Ex.: DPR8EA-9"
+                />
+              </label>
+              <label className="field-label">
+                Descricao/modelo *
+                <input
+                  value={execucaoForm.peca_descricao}
+                  onChange={(event) => setExecucaoForm((current) => ({ ...current, peca_descricao: event.target.value }))}
+                  placeholder="Ex.: Vela NGK"
+                />
+              </label>
+            </div>
+          ) : (
+            <label className="field-label">
+              Observacao
+              <textarea
+                rows={4}
+                value={execucaoForm.descricao_execucao}
+                onChange={(event) => setExecucaoForm((current) => ({ ...current, descricao_execucao: event.target.value }))}
+                placeholder="Relate algo importante sobre este servico"
+              />
+            </label>
+          )}
         </div>
       </Modal>
 
@@ -961,7 +1080,12 @@ function OperacaoV2Page() {
                 type="button"
                 className="primary-button"
                 onClick={() => void handleSalvarDiagnostico()}
-                disabled={busy || !diagnosticoForm.descricao.trim() || !diagnosticoForm.mecanico_principal_id}
+                disabled={
+                  busy ||
+                  !diagnosticoForm.descricao.trim() ||
+                  !diagnosticoForm.mecanico_principal_id ||
+                  Number(diagnosticoForm.periodos_estimados || 0) <= 0
+                }
               >
                 Salvar diagnostico
               </button>
@@ -993,9 +1117,21 @@ function OperacaoV2Page() {
                   <p>{selectedOrder.queixa_principal || "Nao informada."}</p>
                 </article>
 
-                <article className="detail-row">
-                  <strong>Servico em diagnostico</strong>
-                  <p>{getDiagnosticItem(selectedOrder)?.descricao || "-"}</p>
+                <article className="detail-row requested-items-panel">
+                  <strong>Itens solicitados pelo cliente</strong>
+                  {getClientRequestedItems(selectedOrder).length ? (
+                    <div className="requested-items-list">
+                      {getClientRequestedItems(selectedOrder).map((item) => (
+                        <div className="requested-item-row" key={item.id}>
+                          <span>{item.descricao}</span>
+                          <small>Qtd {Number(item.quantidade || 1)}</small>
+                          <strong>R$ {toMoney(item.valor_total || 0)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>Nenhum item informado na recepcao.</p>
+                  )}
                 </article>
 
                 <label className="field-label">
@@ -1048,10 +1184,10 @@ function OperacaoV2Page() {
                       onClick={() =>
                         setDiagnosticoForm((current) => ({
                           ...current,
-                          periodos_estimados: Math.max(1, current.periodos_estimados - 1),
+                          periodos_estimados: Math.max(0, current.periodos_estimados - 1),
                         }))
                       }
-                      disabled={diagnosticoForm.periodos_estimados <= 1}
+                      disabled={diagnosticoForm.periodos_estimados <= 0}
                       aria-label="Retirar meio periodo"
                     >
                       -
@@ -1139,7 +1275,12 @@ function OperacaoV2Page() {
                           </p>
                         ) : null}
                         {getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao ? (
-                          <p className="operacao-service-observation">{getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao}</p>
+                          <p className="operacao-service-observation">
+                            {isAtendimentoRapido(selectedOrder) ? "Peca aplicada: " : ""}
+                            {isAtendimentoRapido(selectedOrder)
+                              ? formatQuickPartReference(getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao)
+                              : getExecucaoForItem(selectedOrder, item.id)?.descricao_execucao}
+                          </p>
                         ) : null}
                       </div>
                       <div className="row-actions operacao-service-actions">
@@ -1148,8 +1289,8 @@ function OperacaoV2Page() {
                           className="icon-button operacao-action-icon"
                           onClick={() => openMechanicAssignment(item)}
                           disabled={busy}
-                          aria-label="Definir equipe"
-                          title="Definir equipe"
+                          aria-label={isAtendimentoRapido(selectedOrder) ? "Informar mecanico e peca aplicada" : "Definir equipe"}
+                          title={isAtendimentoRapido(selectedOrder) ? "Informar mecanico e peca aplicada" : "Definir equipe"}
                         >
                           <AppIcon name="mechanic" size={18} />
                         </button>

@@ -203,8 +203,11 @@ function ControlePatioPage() {
               <div className="patio-card-copy">
                 <strong>{ordem.cliente_nome || "Cliente nao informado"}</strong>
                 <p>
-                  {ordem.motocicleta_modelo || "Moto"}
-                  {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
+                  <span>
+                    {ordem.motocicleta_modelo || "Moto"}
+                    {ordem.motocicleta_placa ? ` - ${ordem.motocicleta_placa}` : ""}
+                  </span>
+                  {ordem.motocicleta_cor ? <em>{ordem.motocicleta_cor}</em> : null}
                 </p>
                 <small>{getServiceSummary(ordem) || ordem.queixa_principal || "Servico nao informado"}</small>
               </div>

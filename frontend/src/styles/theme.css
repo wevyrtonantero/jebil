@@ -2387,6 +2387,49 @@
   white-space: pre-line;
 }
 
+.requested-items-panel {
+  gap: 10px;
+}
+
+.requested-items-list {
+  display: grid;
+  gap: 8px;
+}
+
+.requested-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.requested-item-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-main);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requested-item-row small {
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+
+.requested-item-row strong {
+  color: #ffd6ad;
+  white-space: nowrap;
+}
+
+.orcamento-requested-items {
+  margin-top: 18px;
+}
+
 .tv-shell {
   min-height: 100vh;
   padding: 24px;
@@ -3649,6 +3692,30 @@
   border-color: rgba(65, 179, 84, 0.28);
 }
 
+.sos-charge-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 77, 77, 0.42);
+  border-radius: 16px;
+  background: rgba(255, 77, 77, 0.12);
+  color: #ffb0aa;
+}
+
+.sos-charge-alert strong {
+  color: #ff6b6b;
+}
+
+.sos-charge-alert span {
+  color: #ffd0cb;
+}
+
+.recepcao-service-line.is-sos-fee .service-line-input {
+  font-weight: 800;
+}
+
 .payment-toggle.is-paid {
   background: rgba(46, 204, 113, 0.16);
   color: #93efab;
@@ -3791,6 +3858,83 @@
   font-size: 0.94rem;
   font-weight: 900;
   letter-spacing: 0;
+}
+
+.recepcao-quick-charge-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.recepcao-quick-charge-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(120px, 0.65fr) minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 189, 119, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 189, 119, 0.08);
+}
+
+.recepcao-quick-charge-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-main);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recepcao-quick-charge-row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #ffd6ad;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recepcao-quick-charge-row em {
+  min-width: 0;
+  overflow: hidden;
+  color: #dbe8ff;
+  font-size: 0.9rem;
+  font-style: normal;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recepcao-quick-charge-row small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.recepcao-ready-card .recepcao-copyable-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.recepcao-ready-card .recepcao-copyable-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recepcao-copy-part-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 11px;
+  flex: none;
 }
 
 .recepcao-ready-actions {
@@ -4770,19 +4914,38 @@
 }
 
 .patio-card-copy strong,
-.patio-card-copy p,
 .patio-card-copy small {
   display: block;
   margin: 0;
+}
+
+.patio-card-copy p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  color: #b9d9f1;
 }
 
 .patio-card-copy strong {
   font-size: 1.08rem;
 }
 
-.patio-card-copy p {
-  margin-top: 4px;
-  color: #b9d9f1;
+.patio-card-copy em {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 189, 119, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 133, 30, 0.12);
+  color: #ffd6ad;
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .patio-card-copy small {
@@ -5448,6 +5611,16 @@
     align-items: start;
   }
 
+  .recepcao-quick-charge-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .recepcao-copy-part-button {
+    justify-self: start;
+    margin-top: 0;
+  }
+
   .recepcao-ready-actions {
     justify-content: flex-start;
   }
@@ -5558,6 +5731,11 @@
 
   .operacao-service-actions {
     justify-content: flex-start;
+  }
+
+  .requested-item-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .orcamento-overview-grid {

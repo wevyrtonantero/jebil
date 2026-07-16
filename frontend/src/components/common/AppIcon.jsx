@@ -210,6 +210,12 @@ function AppIcon({ name, className = "", size = 20 }) {
         <path d="m8 12 2.5 2.5L16 9" />
       </>
     ),
+    copy: (
+      <>
+        <rect x="8" y="8" width="11" height="11" rx="2" />
+        <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+      </>
+    ),
     cloud: (
       <>
         <path d="M7 18a4 4 0 1 1 .8-7.9A5.5 5.5 0 0 1 18 11a3.5 3.5 0 1 1 0 7H7Z" />

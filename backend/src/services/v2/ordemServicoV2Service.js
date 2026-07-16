@@ -166,6 +166,13 @@ function getLatestOrcamentoRecord(orcamentos = []) {
   })[0] || null;
 }
 
+function isDuplicateExternalBudgetNumberError(error) {
+  return (
+    error?.code === "ER_DUP_ENTRY" &&
+    String(error?.message || "").includes("uk_orcamentos_numero_externo")
+  );
+}
+
 function buildAssinaturaRecebimentoTerm(ordemServico, latestOrcamento, assinadoEm) {
   const moto = [
     ordemServico.motocicleta_marca,
@@ -1184,26 +1191,29 @@ async function concluirDiagnostico(diagnosticoId, payload, currentUser) {
       enviado_orcamentista_em: payload.enviarOrcamentista ? db.fn.now() : diagnostico.enviado_orcamentista_em,
     });
 
-    if (diagnostico.item_diagnostico_id) {
-      const item = await itemOrdemServicoV2Repository.findById(diagnostico.item_diagnostico_id, trx);
-      if (item && item.status_item === "EM_DIAGNOSTICO") {
-        await itemOrdemServicoV2Repository.updateFields(trx, item.id, {
+    const itensEmDiagnostico = await trx("itens_ordem_servico")
+      .where({ ordem_servico_id: diagnostico.ordem_servico_id })
+      .whereIn("status_item", ["AGUARDANDO_DIAGNOSTICO", "EM_DIAGNOSTICO"])
+      .select("*");
+
+    for (const item of itensEmDiagnostico) {
+      await itemOrdemServicoV2Repository.updateFields(trx, item.id, {
           status_item: "AGUARDANDO_AUTORIZACAO",
           concluido_em: item.concluido_em,
         });
-        await appendHistoricoItem(trx, {
-          itemOrdemServicoId: item.id,
-          usuarioId: currentUser.id,
-          acao: payload.enviarOrcamentista ? "DIAGNOSTICO_CONCLUIDO_ENVIADO_ORCAMENTO" : "DIAGNOSTICO_CONCLUIDO",
-          statusItemAnterior: item.status_item,
-          statusItemNovo: "AGUARDANDO_AUTORIZACAO",
-          autorizacaoAnterior: item.autorizacao_status,
-          autorizacaoNova: item.autorizacao_status,
-          pagamentoAnterior: item.pagamento_status,
-          pagamentoNovo: item.pagamento_status,
-          observacao: "Item de diagnostico concluido.",
-        });
-      }
+
+      await appendHistoricoItem(trx, {
+        itemOrdemServicoId: item.id,
+        usuarioId: currentUser.id,
+        acao: payload.enviarOrcamentista ? "DIAGNOSTICO_CONCLUIDO_ENVIADO_ORCAMENTO" : "DIAGNOSTICO_CONCLUIDO",
+        statusItemAnterior: item.status_item,
+        statusItemNovo: "AGUARDANDO_AUTORIZACAO",
+        autorizacaoAnterior: item.autorizacao_status,
+        autorizacaoNova: item.autorizacao_status,
+        pagamentoAnterior: item.pagamento_status,
+        pagamentoNovo: item.pagamento_status,
+        observacao: "Item liberado para orcamento apos diagnostico geral da moto.",
+      });
     }
 
     await appendHistoricoOrdemServico(trx, {
@@ -1846,7 +1856,8 @@ async function generateAssinaturaRecebimentoPdf(ordemServicoId, currentUser) {
 }
 
 async function createOrcamento(ordemServicoId, payload, currentUser) {
-  const data = await db.transaction(async (trx) => {
+  try {
+    const data = await db.transaction(async (trx) => {
     const ordem = await ordemServicoV2Repository.findById(ordemServicoId, trx);
     const dataPrometidaNormalizada = normalizeMySqlDateTime(payload.dataPrometida);
 
@@ -1963,8 +1974,18 @@ async function createOrcamento(ordemServicoId, payload, currentUser) {
     };
   });
 
-  emitV2Updated(ordemServicoId, { tipo: "orcamento_salvo" });
-  return data;
+    emitV2Updated(ordemServicoId, { tipo: "orcamento_salvo" });
+    return data;
+  } catch (error) {
+    if (isDuplicateExternalBudgetNumberError(error)) {
+      throw new ApiError(
+        409,
+        `Numero externo ${payload.numeroExterno} ja esta em uso em outro orcamento. Informe outro numero externo ou abra o PDF pelo orcamento existente.`,
+      );
+    }
+
+    throw error;
+  }
 }
 
 async function updateOrcamentoStatus(orcamentoId, payload, currentUser) {
