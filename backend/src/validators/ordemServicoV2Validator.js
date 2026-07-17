@@ -177,6 +177,7 @@ module.exports = {
   validateCreateDiagnosticoPayload,
   validateConcluirDiagnosticoPayload,
   validateAdicionarItensSugeridosPayload,
+  validateAdicionarServicoRapidoPayload,
   validateReordenarControlePatioPayload,
 };
 
@@ -241,6 +242,40 @@ function validateUpdateItemPagamentoPayload(payload) {
   return {
     pagamentoStatus,
     observacao,
+  };
+}
+
+function validateAdicionarServicoRapidoPayload(payload) {
+  const descricao = String(payload.descricao || "").trim();
+  const mecanicoPrincipalId = Number(payload.mecanico_principal_id);
+  const mecanicosAuxiliaresIds = Array.isArray(payload.mecanicos_auxiliares_ids)
+    ? payload.mecanicos_auxiliares_ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const pecaCodigo = String(payload.peca_codigo || "").trim();
+  const pecaDescricao = String(payload.peca_descricao || "").trim();
+
+  if (!descricao) {
+    throw new ApiError(400, "Informe o servico que sera feito.");
+  }
+
+  if (!Number.isInteger(mecanicoPrincipalId) || mecanicoPrincipalId <= 0) {
+    throw new ApiError(400, "Selecione o mecanico responsavel pelo novo servico.");
+  }
+
+  if (!pecaCodigo) {
+    throw new ApiError(400, "Informe o codigo da peca aplicada.");
+  }
+
+  if (!pecaDescricao) {
+    throw new ApiError(400, "Informe a descricao/modelo da peca aplicada.");
+  }
+
+  return {
+    descricao,
+    mecanicoPrincipalId,
+    mecanicosAuxiliaresIds: [...new Set(mecanicosAuxiliaresIds.filter((id) => id !== mecanicoPrincipalId))],
+    pecaCodigo,
+    pecaDescricao,
   };
 }
 

@@ -13,6 +13,7 @@ const {
   listOperacionalV2,
   listItemSuggestionsV2,
   reordenarControlePatioV2,
+  adicionarServicoRapidoV2,
 } = require("../controllers/ordemServicoV2Controller");
 const {
   uploadFotosEntradaV2,
@@ -53,6 +54,7 @@ router.post("/:ordemId/assinatura-recebimento", roleMiddleware(perfisAplicacao),
 router.post("/:ordemId/assinatura-recebimento/pdf", roleMiddleware(perfisAplicacao), generateAssinaturaRecebimentoPdfV2);
 router.patch("/:ordemId/confirmar-retirada", roleMiddleware(perfisAplicacao), confirmarRetiradaV2);
 router.post("/:ordemId/orcamentos", roleMiddleware(perfisAplicacao), createOrcamentoV2);
+router.post("/:ordemId/items/servico-rapido", roleMiddleware(perfisOperacao), adicionarServicoRapidoV2);
 router.post("/:ordemId/items/:itemId/execucao", roleMiddleware(perfisOperacao), atribuirExecucaoV2);
 router.post("/:ordemId/items/:itemId/previsoes-pecas", roleMiddleware(perfisOperacao), registrarPrevisaoPecaV2);
 router.post("/orcamentos/:id/pdf", roleMiddleware(perfisAplicacao), uploadOrcamentoPdf.single("arquivo"), uploadErrorMiddleware, uploadOrcamentoPdfV2);

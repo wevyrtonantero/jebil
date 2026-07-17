@@ -118,6 +118,11 @@ async function atribuirExecucaoV2(ordemId, itemId, payload) {
   return response.data.data;
 }
 
+async function adicionarServicoRapidoV2(ordemId, payload) {
+  const response = await api.post(`/v2/ordens-servico/${ordemId}/items/servico-rapido`, payload);
+  return response.data.data;
+}
+
 async function updateItemStatusV2(ordemId, itemId, statusItem, observacao = null) {
   const response = await api.patch(`/v2/ordens-servico/${ordemId}/items/${itemId}/status`, {
     status_item: statusItem,
@@ -182,6 +187,7 @@ export {
   registrarPrevisaoPecaV2,
   retomarItemDaPecaV2,
   atribuirExecucaoV2,
+  adicionarServicoRapidoV2,
   updateItemStatusV2,
   updateItemAutorizacaoV2,
   updateItemPagamentoV2,

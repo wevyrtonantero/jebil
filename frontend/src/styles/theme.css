@@ -4718,6 +4718,16 @@
   gap: 8px;
 }
 
+.operacao-add-quick-service-button {
+  justify-self: end;
+  min-height: 46px;
+  padding-inline: 18px;
+}
+
+.operacao-modal-summary.has-quick-action {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .operacao-finalize-hint {
   display: inline-flex;
   align-items: center;
@@ -5725,8 +5735,13 @@
     grid-template-columns: 1fr;
   }
 
-  .operacao-modal-summary {
+  .operacao-modal-summary,
+  .operacao-modal-summary.has-quick-action {
     grid-template-columns: 1fr;
+  }
+
+  .operacao-add-quick-service-button {
+    justify-self: start;
   }
 
   .operacao-service-actions {

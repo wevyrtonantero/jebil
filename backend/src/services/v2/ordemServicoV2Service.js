@@ -310,6 +310,10 @@ function isAtendimentoRapidoOrdem(ordemServico, items = []) {
   );
 }
 
+function buildQuickPartReference(pecaCodigo, pecaDescricao) {
+  return [`CODIGO: ${String(pecaCodigo || "").trim()}`, `DESCRICAO: ${String(pecaDescricao || "").trim()}`].join("\n");
+}
+
 function isDiagnosticPlaceholderItem(item) {
   const descricao = String(item?.descricao || "").trim().toLowerCase();
   return descricao === "diagnostico inicial";
@@ -989,6 +993,130 @@ async function retomarItemDaPeca(ordemServicoId, itemId, payload, currentUser) {
     return loadOrdemServicoBundle(ordemServicoId, trx);
   });
   emitV2Updated(ordemServicoId, { tipo: "retomada_peca" });
+  return data;
+}
+
+async function adicionarServicoRapido(ordemServicoId, payload, currentUser) {
+  const data = await db.transaction(async (trx) => {
+    const ordem = await ordemServicoV2Repository.findById(ordemServicoId, trx);
+
+    if (!ordem) {
+      throw new ApiError(404, "Ordem de servico V2 nao encontrada.");
+    }
+
+    const existingItems = await itemOrdemServicoV2Repository.listByOrdemServicoId(ordemServicoId, trx);
+
+    if (!isAtendimentoRapidoOrdem(ordem, existingItems)) {
+      throw new ApiError(400, "Novos servicos pela operacao estao liberados apenas para atendimento rapido.");
+    }
+
+    const principal = await mecanicoRepository.findById(payload.mecanicoPrincipalId);
+
+    if (!principal || !principal.ativo) {
+      throw new ApiError(404, "Mecanico principal nao encontrado ou inativo.");
+    }
+
+    for (const mecanicoId of payload.mecanicosAuxiliaresIds) {
+      const auxiliar = await mecanicoRepository.findById(mecanicoId);
+
+      if (!auxiliar || !auxiliar.ativo) {
+        throw new ApiError(404, `Mecanico auxiliar ${mecanicoId} nao encontrado ou inativo.`);
+      }
+    }
+
+    const itemsAfterInsert = await itemOrdemServicoV2Repository.insertMany(trx, [
+      {
+        ordemServicoId,
+        descricao: payload.descricao,
+        categoria: null,
+        tipo: null,
+        origem: "SOLICITADO_CLIENTE",
+        execucaoDireta: true,
+        exigeDiagnostico: false,
+        autorizacaoStatus: "NAO_SE_APLICA",
+        pagamentoStatus: "PENDENTE",
+        statusItem: "EM_EXECUCAO",
+        prioridade: "NORMAL",
+        quantidade: 1,
+        valorUnitario: 0,
+        valorTotal: 0,
+        dataPrometida: null,
+        previsaoPecaAtual: null,
+        observacoes: "Servico rapido adicional informado pela operacao.",
+        garantiaAplicavel: true,
+        criadoPor: currentUser.id,
+      },
+    ]);
+
+    const novoItem = itemsAfterInsert
+      .filter((item) => String(item.descricao || "").trim() === payload.descricao)
+      .sort((left, right) => Number(right.id) - Number(left.id))[0];
+
+    if (!novoItem) {
+      throw new ApiError(500, "Nao foi possivel localizar o servico rapido criado.");
+    }
+
+    await itemOrdemServicoV2Repository.updateFields(trx, novoItem.id, {
+      iniciado_em: db.fn.now(),
+    });
+
+    const [execucaoId] = await trx("execucoes").insert({
+      item_ordem_servico_id: novoItem.id,
+      mecanico_principal_id: payload.mecanicoPrincipalId,
+      status_execucao: "EM_EXECUCAO",
+      descricao_execucao: buildQuickPartReference(payload.pecaCodigo, payload.pecaDescricao),
+      iniciado_em: db.fn.now(),
+      criado_em: db.fn.now(),
+      atualizado_em: db.fn.now(),
+    });
+
+    await trx("execucao_mecanicos").insert([
+      {
+        execucao_id: execucaoId,
+        mecanico_id: payload.mecanicoPrincipalId,
+        papel: "PRINCIPAL",
+        status_participacao: "ATIVA",
+        iniciado_em: db.fn.now(),
+        criado_em: db.fn.now(),
+      },
+      ...payload.mecanicosAuxiliaresIds.map((mecanicoId) => ({
+        execucao_id: execucaoId,
+        mecanico_id: mecanicoId,
+        papel: "AUXILIAR",
+        status_participacao: "ATIVA",
+        iniciado_em: db.fn.now(),
+        criado_em: db.fn.now(),
+      })),
+    ]);
+
+    await appendHistoricoItem(trx, {
+      itemOrdemServicoId: novoItem.id,
+      usuarioId: currentUser.id,
+      acao: "SERVICO_RAPIDO_ADICIONADO",
+      statusItemAnterior: null,
+      statusItemNovo: "EM_EXECUCAO",
+      autorizacaoAnterior: null,
+      autorizacaoNova: "NAO_SE_APLICA",
+      pagamentoAnterior: null,
+      pagamentoNovo: "PENDENTE",
+      observacao: "Servico rapido adicional criado pela operacao.",
+    });
+
+    await appendHistoricoOrdemServico(trx, {
+      ordemServicoId,
+      usuarioId: currentUser.id,
+      acao: "SERVICO_RAPIDO_ADICIONADO",
+      statusAnterior: ordem.status_geral,
+      statusNovo: ordem.status_geral,
+      observacao: `Servico rapido adicional: ${payload.descricao}.`,
+    });
+
+    await recalculateOrdemServicoAggregate(trx, ordemServicoId, currentUser, "Recalculo apos inclusao de servico rapido.");
+    return loadOrdemServicoBundle(ordemServicoId, trx);
+  });
+
+  emitSocketEvent("mecanico:atualizado", { tipo: "servico-rapido-adicionado" });
+  emitV2Updated(ordemServicoId, { tipo: "servico_rapido_adicionado" });
   return data;
 }
 
@@ -2101,5 +2229,6 @@ module.exports = {
   uploadOrcamentoPdf,
   registrarPrevisaoPeca,
   retomarItemDaPeca,
+  adicionarServicoRapido,
   atribuirExecucao,
 };

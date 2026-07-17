@@ -5,6 +5,7 @@ import Modal from "../components/common/Modal";
 import AppIcon from "../components/common/AppIcon";
 import { listMecanicos } from "../services/mecanicoService";
 import {
+  adicionarServicoRapidoV2,
   atribuirExecucaoV2,
   concluirDiagnosticoV2,
   createDiagnosticoV2,
@@ -436,6 +437,7 @@ function OperacaoV2Page() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [mechanicOpen, setMechanicOpen] = useState(false);
+  const [quickServiceOpen, setQuickServiceOpen] = useState(false);
   const [partOpen, setPartOpen] = useState(false);
   const [assigningItem, setAssigningItem] = useState(null);
   const [partItem, setPartItem] = useState(null);
@@ -450,6 +452,13 @@ function OperacaoV2Page() {
     mecanico_principal_id: "",
     mecanicos_auxiliares_ids: [],
     descricao_execucao: "",
+    peca_codigo: "",
+    peca_descricao: "",
+  });
+  const [quickServiceForm, setQuickServiceForm] = useState({
+    descricao: "",
+    mecanico_principal_id: "",
+    mecanicos_auxiliares_ids: [],
     peca_codigo: "",
     peca_descricao: "",
   });
@@ -594,6 +603,18 @@ function OperacaoV2Page() {
     setPartOpen(true);
   }
 
+  function openQuickServiceModal() {
+    setQuickServiceForm({
+      descricao: "",
+      mecanico_principal_id: "",
+      mecanicos_auxiliares_ids: [],
+      peca_codigo: "",
+      peca_descricao: "",
+    });
+    setError("");
+    setQuickServiceOpen(true);
+  }
+
   async function refreshSelectedOrder(ordemId) {
     const detail = await getOrdemServicoV2(ordemId);
     setSelectedOrder(detail);
@@ -713,6 +734,52 @@ function OperacaoV2Page() {
       setFeedback("Servico atualizado e enviado para execucao.");
     } catch (requestError) {
       setError(requestError?.response?.data?.message || "Nao foi possivel vincular os mecanicos.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAdicionarServicoRapido() {
+    const selectedMechanicIds = [quickServiceForm.mecanico_principal_id, ...quickServiceForm.mecanicos_auxiliares_ids].filter(Boolean);
+
+    if (!selectedOrder || !isAtendimentoRapido(selectedOrder)) {
+      return;
+    }
+
+    if (!quickServiceForm.descricao.trim()) {
+      setError("Informe o servico que sera feito.");
+      return;
+    }
+
+    if (!selectedMechanicIds.length) {
+      setError("Selecione o mecanico responsavel pelo novo servico.");
+      return;
+    }
+
+    if (!quickServiceForm.peca_codigo.trim() || !quickServiceForm.peca_descricao.trim()) {
+      setError("Informe o codigo e a descricao/modelo da peca aplicada.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      const [mecanicoPrincipalId, ...mecanicosAuxiliaresIds] = selectedMechanicIds;
+
+      await adicionarServicoRapidoV2(selectedOrder.id, {
+        descricao: quickServiceForm.descricao.trim(),
+        mecanico_principal_id: Number(mecanicoPrincipalId),
+        mecanicos_auxiliares_ids: mecanicosAuxiliaresIds.map((id) => Number(id)),
+        peca_codigo: quickServiceForm.peca_codigo.trim(),
+        peca_descricao: quickServiceForm.peca_descricao.trim(),
+      });
+
+      await refreshSelectedOrder(selectedOrder.id);
+      setQuickServiceOpen(false);
+      setFeedback("Servico rapido adicional incluido para cobranca na recepcao.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Nao foi possivel adicionar o servico rapido.");
     } finally {
       setBusy(false);
     }
@@ -856,6 +923,23 @@ function OperacaoV2Page() {
     const selectedId = String(mecanicoId);
 
     setExecucaoForm((current) => {
+      const currentSelectedIds = [current.mecanico_principal_id, ...current.mecanicos_auxiliares_ids].filter(Boolean);
+      const nextSelectedIds = currentSelectedIds.includes(selectedId)
+        ? currentSelectedIds.filter((id) => id !== selectedId)
+        : [...currentSelectedIds, selectedId];
+
+      return {
+        ...current,
+        mecanico_principal_id: nextSelectedIds[0] || "",
+        mecanicos_auxiliares_ids: nextSelectedIds.slice(1),
+      };
+    });
+  }
+
+  function toggleQuickServiceMecanico(mecanicoId) {
+    const selectedId = String(mecanicoId);
+
+    setQuickServiceForm((current) => {
       const currentSelectedIds = [current.mecanico_principal_id, ...current.mecanicos_auxiliares_ids].filter(Boolean);
       const nextSelectedIds = currentSelectedIds.includes(selectedId)
         ? currentSelectedIds.filter((id) => id !== selectedId)
@@ -1214,7 +1298,7 @@ function OperacaoV2Page() {
               </>
             ) : (
               <>
-                <article className="detail-row operacao-modal-summary is-compact">
+                <article className={`detail-row operacao-modal-summary is-compact ${isAtendimentoRapido(selectedOrder) ? "has-quick-action" : ""}`}>
                   <div className="operacao-modal-summary-metrics">
                     <span className="summary-pill strong" title="Total de servicos no fluxo">
                       <AppIcon name="reports" size={14} />
@@ -1242,6 +1326,12 @@ function OperacaoV2Page() {
                       )
                     ) : null}
                   </div>
+                  {isAtendimentoRapido(selectedOrder) ? (
+                    <button type="button" className="primary-button operacao-add-quick-service-button" onClick={openQuickServiceModal} disabled={busy}>
+                      <AppIcon name="plus" size={18} />
+                      Novo servico
+                    </button>
+                  ) : null}
                 </article>
 
                 <div className="table-list operacao-service-list operacao-service-board">
@@ -1337,6 +1427,79 @@ function OperacaoV2Page() {
             )}
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={quickServiceOpen}
+        onClose={() => setQuickServiceOpen(false)}
+        title="Novo servico rapido"
+        subtitle={selectedOrder ? `${selectedOrder.motocicleta_modelo} - ${selectedOrder.motocicleta_placa || "Sem placa"}` : ""}
+        size="medium"
+        zIndex={1150}
+        actions={
+          <>
+            <button type="button" className="ghost-button" onClick={() => setQuickServiceOpen(false)} disabled={busy}>
+              Fechar
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void handleAdicionarServicoRapido()}
+              disabled={
+                busy ||
+                !quickServiceForm.descricao.trim() ||
+                ![quickServiceForm.mecanico_principal_id, ...quickServiceForm.mecanicos_auxiliares_ids].filter(Boolean).length ||
+                !quickServiceForm.peca_codigo.trim() ||
+                !quickServiceForm.peca_descricao.trim()
+              }
+            >
+              Salvar novo servico
+            </button>
+          </>
+        }
+      >
+        <div className="modal-stack">
+          <label className="field-label">
+            Servico que sera feito *
+            <input
+              value={quickServiceForm.descricao}
+              onChange={(event) => setQuickServiceForm((current) => ({ ...current, descricao: event.target.value }))}
+              placeholder="Ex.: Troca de cabo de acelerador"
+            />
+          </label>
+
+          <div className="button-row operacao-mecanicos-grid">
+            {mecanicos.map((mecanico) => {
+              const selectedMechanicIds = [quickServiceForm.mecanico_principal_id, ...quickServiceForm.mecanicos_auxiliares_ids].filter(Boolean);
+              const isActive = selectedMechanicIds.includes(String(mecanico.id));
+
+              return (
+                <button key={mecanico.id} type="button" className={`toggle-chip ${isActive ? "active" : ""}`} onClick={() => toggleQuickServiceMecanico(mecanico.id)}>
+                  {mecanico.nome}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="field-grid two-up">
+            <label className="field-label">
+              Codigo da peca *
+              <input
+                value={quickServiceForm.peca_codigo}
+                onChange={(event) => setQuickServiceForm((current) => ({ ...current, peca_codigo: event.target.value }))}
+                placeholder="Ex.: DPR8EA-9"
+              />
+            </label>
+            <label className="field-label">
+              Descricao/modelo *
+              <input
+                value={quickServiceForm.peca_descricao}
+                onChange={(event) => setQuickServiceForm((current) => ({ ...current, peca_descricao: event.target.value }))}
+                placeholder="Ex.: Vela NGK"
+              />
+            </label>
+          </div>
+        </div>
       </Modal>
 
       <Modal
