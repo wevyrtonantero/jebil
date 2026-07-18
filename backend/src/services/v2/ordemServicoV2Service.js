@@ -1120,6 +1120,124 @@ async function adicionarServicoRapido(ordemServicoId, payload, currentUser) {
   return data;
 }
 
+async function cancelarServicoRapido(ordemServicoId, payload, currentUser) {
+  const data = await db.transaction(async (trx) => {
+    const ordem = await ordemServicoV2Repository.findById(ordemServicoId, trx);
+
+    if (!ordem) {
+      throw new ApiError(404, "Ordem de servico V2 nao encontrada.");
+    }
+
+    if (["FINALIZADA", "ARQUIVADA", "CANCELADA"].includes(ordem.status_geral)) {
+      throw new ApiError(409, "Esta ordem ja esta encerrada.");
+    }
+
+    const items = await itemOrdemServicoV2Repository.listByOrdemServicoId(ordemServicoId, trx);
+
+    if (!isAtendimentoRapidoOrdem(ordem, items)) {
+      throw new ApiError(400, "Cancelamento direto pela operacao esta liberado apenas para servico rapido.");
+    }
+
+    const motivo = payload.motivo || "Desistencia do servico rapido informada pela operacao.";
+    const activeItems = items.filter((item) => item.status_item !== "CANCELADO");
+
+    for (const item of activeItems) {
+      await itemOrdemServicoV2Repository.updateFields(trx, item.id, {
+        status_item: "CANCELADO",
+        cancelado_em: db.fn.now(),
+      });
+
+      await appendHistoricoItem(trx, {
+        itemOrdemServicoId: item.id,
+        usuarioId: currentUser.id,
+        acao: "SERVICO_RAPIDO_CANCELADO",
+        statusItemAnterior: item.status_item,
+        statusItemNovo: "CANCELADO",
+        autorizacaoAnterior: item.autorizacao_status,
+        autorizacaoNova: item.autorizacao_status,
+        pagamentoAnterior: item.pagamento_status,
+        pagamentoNovo: item.pagamento_status,
+        observacao: motivo,
+      });
+    }
+
+    const execucoes = activeItems.length
+      ? await trx("execucoes").whereIn(
+          "item_ordem_servico_id",
+          activeItems.map((item) => item.id),
+        )
+      : [];
+
+    if (execucoes.length) {
+      await trx("execucoes")
+        .whereIn(
+          "id",
+          execucoes.map((execucao) => execucao.id),
+        )
+        .update({
+          status_execucao: "CANCELADA",
+          finalizado_em: db.fn.now(),
+          atualizado_em: db.fn.now(),
+        });
+
+      await trx("execucao_mecanicos")
+        .whereIn(
+          "execucao_id",
+          execucoes.map((execucao) => execucao.id),
+        )
+        .where({ status_participacao: "ATIVA" })
+        .update({
+          status_participacao: "CANCELADA",
+          finalizado_em: db.fn.now(),
+        });
+    }
+
+    const atualizada = await ordemServicoV2Repository.updateFields(trx, ordemServicoId, {
+      status_geral: "CANCELADA",
+      cancelada_em: db.fn.now(),
+    });
+
+    if (ordem.legado_atendimento_id) {
+      const atendimento = await atendimentoRepository.findById(ordem.legado_atendimento_id, trx);
+
+      if (atendimento && !["FINALIZADO", "CANCELADO"].includes(atendimento.status)) {
+        await atendimentoRepository.updateFields(trx, atendimento.id, {
+          status: "CANCELADO",
+          cancelado_em: db.fn.now(),
+          observacoes_internas: [atendimento.observacoes_internas, motivo].filter(Boolean).join("\n"),
+        });
+
+        await registrarHistorico(trx, {
+          atendimentoId: atendimento.id,
+          usuarioId: currentUser.id,
+          acao: "CANCELADO",
+          statusAnterior: atendimento.status,
+          statusNovo: "CANCELADO",
+          observacao: motivo,
+        });
+      }
+    }
+
+    await appendHistoricoOrdemServico(trx, {
+      ordemServicoId,
+      usuarioId: currentUser.id,
+      acao: "SERVICO_RAPIDO_CANCELADO",
+      statusAnterior: ordem.status_geral,
+      statusNovo: "CANCELADA",
+      observacao: motivo,
+    });
+
+    return {
+      ordemServico: await loadOrdemServicoBundle(atualizada.id, trx),
+    };
+  });
+
+  emitSocketEvent("atendimento:cancelado", { ordemServicoId });
+  emitSocketEvent("fila:atualizada", {});
+  emitV2Updated(ordemServicoId, { tipo: "servico_rapido_cancelado" });
+  return data;
+}
+
 async function atribuirExecucao(ordemServicoId, itemId, payload, currentUser) {
   const data = await db.transaction(async (trx) => {
     await ordemServicoV2Repository.findById(ordemServicoId, trx);
@@ -2230,5 +2348,6 @@ module.exports = {
   registrarPrevisaoPeca,
   retomarItemDaPeca,
   adicionarServicoRapido,
+  cancelarServicoRapido,
   atribuirExecucao,
 };

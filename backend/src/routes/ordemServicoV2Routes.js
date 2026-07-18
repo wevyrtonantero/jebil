@@ -14,6 +14,7 @@ const {
   listItemSuggestionsV2,
   reordenarControlePatioV2,
   adicionarServicoRapidoV2,
+  cancelarServicoRapidoV2,
 } = require("../controllers/ordemServicoV2Controller");
 const {
   uploadFotosEntradaV2,
@@ -53,6 +54,7 @@ router.post("/:ordemId/comunicacoes-whatsapp", roleMiddleware(perfisOperacao), r
 router.post("/:ordemId/assinatura-recebimento", roleMiddleware(perfisAplicacao), registrarAssinaturaRecebimentoV2);
 router.post("/:ordemId/assinatura-recebimento/pdf", roleMiddleware(perfisAplicacao), generateAssinaturaRecebimentoPdfV2);
 router.patch("/:ordemId/confirmar-retirada", roleMiddleware(perfisAplicacao), confirmarRetiradaV2);
+router.patch("/:ordemId/cancelar-servico-rapido", roleMiddleware(perfisOperacao), cancelarServicoRapidoV2);
 router.post("/:ordemId/orcamentos", roleMiddleware(perfisAplicacao), createOrcamentoV2);
 router.post("/:ordemId/items/servico-rapido", roleMiddleware(perfisOperacao), adicionarServicoRapidoV2);
 router.post("/:ordemId/items/:itemId/execucao", roleMiddleware(perfisOperacao), atribuirExecucaoV2);

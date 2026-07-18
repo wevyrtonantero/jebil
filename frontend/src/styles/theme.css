@@ -2308,6 +2308,12 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.modal-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .modal-body {
   padding: 22px;
   display: grid;
@@ -4722,6 +4728,12 @@
   justify-self: end;
   min-height: 46px;
   padding-inline: 18px;
+}
+
+.operacao-cancel-quick-button {
+  background: rgba(255, 92, 92, 0.14);
+  border-color: rgba(255, 92, 92, 0.28);
+  color: #ffb7b7;
 }
 
 .operacao-modal-summary.has-quick-action {

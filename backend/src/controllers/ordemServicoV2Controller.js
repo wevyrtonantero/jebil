@@ -11,6 +11,7 @@ const {
   validateConcluirDiagnosticoPayload,
   validateAdicionarItensSugeridosPayload,
   validateAdicionarServicoRapidoPayload,
+  validateCancelarServicoRapidoPayload,
   validateReordenarControlePatioPayload,
 } = require("../validators/ordemServicoV2Validator");
 
@@ -91,6 +92,12 @@ const adicionarServicoRapidoV2 = asyncHandler(async (req, res) => {
   sendSuccess(res, data, "Servico rapido V2 adicionado com sucesso.", 201);
 });
 
+const cancelarServicoRapidoV2 = asyncHandler(async (req, res) => {
+  const payload = validateCancelarServicoRapidoPayload(req.body);
+  const data = await ordemServicoV2Service.cancelarServicoRapido(Number(req.params.ordemId), payload, req.user);
+  sendSuccess(res, data, "Servico rapido V2 cancelado com sucesso.");
+});
+
 const getProntuarioMotocicletaV2 = asyncHandler(async (req, res) => {
   const data = await ordemServicoV2Service.getProntuarioByMotocicletaId(Number(req.params.motocicletaId));
   sendSuccess(res, data, "Prontuario V2 da motocicleta carregado com sucesso.");
@@ -125,6 +132,7 @@ module.exports = {
   concluirDiagnosticoV2,
   adicionarItensSugeridosDiagnosticoV2,
   adicionarServicoRapidoV2,
+  cancelarServicoRapidoV2,
   getProntuarioMotocicletaV2,
   listOperacionalV2,
   listItemSuggestionsV2,

@@ -178,6 +178,7 @@ module.exports = {
   validateConcluirDiagnosticoPayload,
   validateAdicionarItensSugeridosPayload,
   validateAdicionarServicoRapidoPayload,
+  validateCancelarServicoRapidoPayload,
   validateReordenarControlePatioPayload,
 };
 
@@ -277,6 +278,16 @@ function validateAdicionarServicoRapidoPayload(payload) {
     pecaCodigo,
     pecaDescricao,
   };
+}
+
+function validateCancelarServicoRapidoPayload(payload) {
+  const motivo = String(payload.motivo || "Desistencia do servico rapido informada pela operacao.").trim();
+
+  if (!motivo) {
+    throw new ApiError(400, "Motivo do cancelamento e obrigatorio.");
+  }
+
+  return { motivo };
 }
 
 function validateCreateDiagnosticoPayload(payload) {

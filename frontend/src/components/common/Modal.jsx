@@ -1,6 +1,6 @@
 import AppIcon from "./AppIcon";
 
-function Modal({ open, title, subtitle, children, onClose, actions, size = "medium", zIndex, closeOnBackdrop = false }) {
+function Modal({ open, title, subtitle, children, onClose, actions, size = "medium", zIndex, closeOnBackdrop = false, headerActions = null }) {
   if (!open) {
     return null;
   }
@@ -24,9 +24,12 @@ function Modal({ open, title, subtitle, children, onClose, actions, size = "medi
             <h2>{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Fechar modal">
-            <AppIcon name="close" />
-          </button>
+          <div className="modal-header-actions">
+            {headerActions}
+            <button type="button" className="icon-button" onClick={onClose} aria-label="Fechar modal">
+              <AppIcon name="close" />
+            </button>
+          </div>
         </header>
         <div className="modal-body">{children}</div>
         {actions ? <footer className="modal-footer">{actions}</footer> : null}

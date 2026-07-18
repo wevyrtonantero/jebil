@@ -7,6 +7,7 @@ import { listMecanicos } from "../services/mecanicoService";
 import {
   adicionarServicoRapidoV2,
   atribuirExecucaoV2,
+  cancelarServicoRapidoV2,
   concluirDiagnosticoV2,
   createDiagnosticoV2,
   getOrdemServicoV2,
@@ -785,6 +786,37 @@ function OperacaoV2Page() {
     }
   }
 
+  async function handleCancelarServicoRapido() {
+    if (!selectedOrder || !isAtendimentoRapido(selectedOrder)) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Cancelar este servico rapido?\n\nA ordem sera cancelada e saira da oficina. Ela nao sera arquivada e nao voltara para a recepcao.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      await cancelarServicoRapidoV2(selectedOrder.id, {
+        motivo: "Desistencia do servico rapido informada pelo mecanico na operacao.",
+      });
+      setDetailOpen(false);
+      setSelectedOrder(null);
+      await loadOrdens();
+      setFeedback("Servico rapido cancelado. A ordem saiu da producao.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Nao foi possivel cancelar o servico rapido.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSalvarPrevisaoPeca() {
     if (!selectedOrder || !partItem) {
       return;
@@ -1154,6 +1186,20 @@ function OperacaoV2Page() {
         title={selectedOrder ? selectedOrder.cliente_nome : "Prontuario"}
         subtitle={selectedOrder ? `${selectedOrder.motocicleta_modelo} - ${selectedOrder.motocicleta_placa || "Sem placa"}` : ""}
         size="large"
+        headerActions={
+          selectedOrder && isAtendimentoRapido(selectedOrder) && !isDiagnosticOrder(selectedOrder) ? (
+            <button
+              type="button"
+              className="icon-button operacao-cancel-quick-button"
+              onClick={() => void handleCancelarServicoRapido()}
+              disabled={busy}
+              aria-label="Cancelar servico rapido"
+              title="Cancelar servico rapido"
+            >
+              <AppIcon name="trash" size={18} />
+            </button>
+          ) : null
+        }
         actions={
           isDiagnosticOrder(selectedOrder) ? (
             <>
