@@ -110,6 +110,30 @@ function hasSearchFilters(filters) {
   return Boolean(filters.nome || filters.cpf || filters.placa || filters.data_inicial || filters.data_final);
 }
 
+function matchesSearchFilters(cliente, filters) {
+  const normalizedName = String(filters.nome || "").trim().toLocaleLowerCase("pt-BR");
+  const normalizedCpf = String(filters.cpf || "").replace(/\D/g, "");
+  const normalizedPlate = formatPlate(filters.placa);
+
+  if (normalizedName && !String(cliente.nome || "").toLocaleLowerCase("pt-BR").includes(normalizedName)) {
+    return false;
+  }
+
+  if (normalizedCpf && String(cliente.cpf || "").replace(/\D/g, "") !== normalizedCpf) {
+    return false;
+  }
+
+  if (normalizedPlate && !cliente.motos.some((moto) => formatPlate(moto.placa) === normalizedPlate)) {
+    return false;
+  }
+
+  if ((filters.data_inicial || filters.data_final) && cliente.atendimentos.length === 0) {
+    return false;
+  }
+
+  return true;
+}
+
 function ClientesPage() {
   const [filters, setFilters] = useState(initialSearch);
   const [resultados, setResultados] = useState([]);
@@ -133,13 +157,16 @@ function ClientesPage() {
       return;
     }
 
+    const shouldListClientes = Boolean(filters.nome || filters.cpf);
     const [clientesResponse, motosResponse, atendimentosData] = await Promise.all([
-      listClientes({
-        nome: filters.nome || undefined,
-        cpf: filters.cpf || undefined,
-        limit: 100,
-        ativo: true,
-      }),
+      shouldListClientes
+        ? listClientes({
+            nome: filters.nome || undefined,
+            cpf: filters.cpf || undefined,
+            limit: 100,
+            ativo: true,
+          })
+        : Promise.resolve({ data: [] }),
       filters.placa
         ? listMotocicletas({
             placa: filters.placa,
@@ -156,7 +183,9 @@ function ClientesPage() {
       }),
     ]);
 
-    setResultados(buildClientMap(clientesResponse, motosResponse, atendimentosData));
+    setResultados(
+      buildClientMap(clientesResponse, motosResponse, atendimentosData).filter((cliente) => matchesSearchFilters(cliente, filters)),
+    );
   }
 
   async function openClienteDetails(cliente) {
@@ -456,7 +485,7 @@ function ClientesPage() {
               className="ghost-button"
               onClick={() => {
                 setFilters(initialSearch);
-                void loadSearch().catch(() => {});
+                setResultados([]);
               }}
             >
               Limpar filtros

@@ -603,6 +603,20 @@ function buildReadyWhatsappMessage(ordem) {
   ].join("\n");
 }
 
+function buildDiagnosticAuthorizationWhatsappMessage(ordem) {
+  const moto = [ordem?.motocicleta_modelo, ordem?.motocicleta_placa ? `- ${ordem.motocicleta_placa}` : null]
+    .filter(Boolean)
+    .join(" ");
+
+  return [
+    `Ola, ${ordem?.cliente_nome || "cliente"}.`,
+    `Para concluirmos o diagnostico da sua moto ${moto || ""}, precisamos da sua autorizacao para abrir o motor e verificar os componentes internos.`.trim(),
+    "Podemos prosseguir com essa etapa? Aguardamos sua confirmacao antes de continuar.",
+    "Importante: caso o servico nao seja autorizado, sera cobrado o valor referente ao diagnostico realizado.",
+    "Jebil Motos.",
+  ].join("\n");
+}
+
 function OrcamentistaV2Page() {
   const [ordens, setOrdens] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -622,6 +636,7 @@ function OrcamentistaV2Page() {
   const [partsControlItems, setPartsControlItems] = useState([]);
   const [pendingSendPayload, setPendingSendPayload] = useState(null);
   const [readyActionId, setReadyActionId] = useState(null);
+  const [diagnosticWhatsappActionId, setDiagnosticWhatsappActionId] = useState(null);
   const [orcamentoPdfFile, setOrcamentoPdfFile] = useState(null);
 
   async function loadOrdens() {
@@ -1408,6 +1423,41 @@ function OrcamentistaV2Page() {
     }
   }
 
+  async function handleDiagnosticAuthorizationWhatsapp(ordem) {
+    const whatsappNumber = resolveWhatsappNumber(ordem?.cliente_telefone);
+
+    if (!whatsappNumber) {
+      setError(`O cliente ${ordem?.cliente_nome || "selecionado"} nao possui telefone cadastrado.`);
+      setFeedback("");
+      return;
+    }
+
+    setDiagnosticWhatsappActionId(ordem.id);
+    setError("");
+    setFeedback("");
+
+    try {
+      const mensagemPreparada = buildDiagnosticAuthorizationWhatsappMessage(ordem);
+      const diagnostico = getLatestDiagnostico(ordem);
+
+      await registrarComunicacaoWhatsAppV2(ordem.id, {
+        tipo_comunicacao: "ORCAMENTISTA_CLIENTE",
+        destinatario: ordem.cliente_telefone,
+        finalidade: "Solicitacao de autorizacao para abertura do motor durante o diagnostico.",
+        mensagem_preparada: mensagemPreparada,
+        diagnostico_id: diagnostico?.id || undefined,
+        status_registro: "WHATSAPP_ABERTO",
+      });
+
+      window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(mensagemPreparada)}`, "_blank", "noopener,noreferrer");
+      setFeedback(`WhatsApp de ${ordem.cliente_nome} aberto com o pedido de autorizacao.`);
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Nao foi possivel abrir o WhatsApp para solicitar a autorizacao.");
+    } finally {
+      setDiagnosticWhatsappActionId(null);
+    }
+  }
+
   return (
     <section className="page-section">
       <div className="panel-card orcamento-page-shell">
@@ -1488,6 +1538,23 @@ function OrcamentistaV2Page() {
                         </strong>
                         <span>R$ {formatCurrencyDisplay(getDisplayedBudgetTotal(ordem))}</span>
                       </div>
+
+                      {diagnosticoPendente ? (
+                        <button
+                          type="button"
+                          className="icon-button recepcao-whatsapp-action orcamento-diagnostic-whatsapp"
+                          onClick={() => void handleDiagnosticAuthorizationWhatsapp(ordem)}
+                          disabled={diagnosticWhatsappActionId === ordem.id || !resolveWhatsappNumber(ordem.cliente_telefone)}
+                          aria-label={`Pedir autorizacao de diagnostico a ${ordem.cliente_nome} pelo WhatsApp`}
+                          title={
+                            resolveWhatsappNumber(ordem.cliente_telefone)
+                              ? "Pedir autorizacao para abrir o motor pelo WhatsApp"
+                              : "Cliente sem telefone cadastrado"
+                          }
+                        >
+                          <AppIcon name="whatsapp" size={18} />
+                        </button>
+                      ) : null}
 
                       <button
                         type="button"
@@ -1878,7 +1945,7 @@ function OrcamentistaV2Page() {
         title={selectedOrder ? selectedOrder.cliente_nome : "Orcamento"}
         subtitle={
           selectedOrder
-            ? `${selectedOrder.motocicleta_placa || "Sem placa"} - ${selectedOrder.motocicleta_modelo || "Sem modelo"} - ${selectedOrder.motocicleta_cor || "Sem cor"}`
+            ? `${selectedOrder.motocicleta_placa || "Sem placa"} - ${selectedOrder.motocicleta_modelo || "Sem modelo"} - ${selectedOrder.motocicleta_cor || "Sem cor"} - ${selectedOrder.motocicleta_ano || "Ano nao informado"}`
             : ""
         }
         size="large"
