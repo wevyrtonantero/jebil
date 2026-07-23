@@ -147,6 +147,29 @@ function getLatestDiagnostico(ordem) {
   return [...(ordem.diagnosticos || [])].sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
 }
 
+function getEstimatedServiceTime(ordem, diagnostico) {
+  const communications = [...(ordem?.comunicacoes_whatsapp || [])].reverse();
+  const extractEstimate = (communication) => {
+    const match = String(communication?.mensagem_preparada || "").match(/Tempo estimado do servi[cç]o:\s*([^\r\n]+)/i);
+    return match?.[1]?.trim() || "";
+  };
+  const matchingDiagnostic = diagnostico?.id
+    ? communications.find(
+        (communication) =>
+          communication.tipo_comunicacao === "OFICINA_ORCAMENTISTA" &&
+          Number(communication.diagnostico_id) === Number(diagnostico.id) &&
+          extractEstimate(communication),
+      )
+    : null;
+  const latestEstimateCommunication =
+    matchingDiagnostic ||
+    communications.find(
+      (communication) => communication.tipo_comunicacao === "OFICINA_ORCAMENTISTA" && extractEstimate(communication),
+    );
+
+  return extractEstimate(latestEstimateCommunication) || "-";
+}
+
 function hasDiagnosticoPendente(ordem) {
   return (ordem?.items || []).some((item) => ["AGUARDANDO_DIAGNOSTICO", "EM_DIAGNOSTICO"].includes(item.status_item));
 }
@@ -2004,6 +2027,10 @@ function OrcamentistaV2Page() {
                     <div>
                       <span>Mecanico</span>
                       <p>{diagnosticoAtual?.mecanico_principal_nome || "-"}</p>
+                    </div>
+                    <div className="orcamento-estimated-time">
+                      <span>Tempo estimado</span>
+                      <p>{getEstimatedServiceTime(selectedOrder, diagnosticoAtual)}</p>
                     </div>
                     <div>
                       <span>Prazo</span>

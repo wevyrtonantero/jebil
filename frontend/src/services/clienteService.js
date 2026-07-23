@@ -5,6 +5,11 @@ async function listClientes(params = {}) {
   return response.data;
 }
 
+async function getClienteById(id) {
+  const response = await api.get(`/clientes/${id}`);
+  return response.data.data;
+}
+
 async function createCliente(payload) {
   const response = await api.post("/clientes", payload);
   return response.data.data;
@@ -25,4 +30,4 @@ async function reactivateCliente(id) {
   return response.data.data;
 }
 
-export { listClientes, createCliente, updateCliente, updateClienteStatus, reactivateCliente };
+export { listClientes, getClienteById, createCliente, updateCliente, updateClienteStatus, reactivateCliente };

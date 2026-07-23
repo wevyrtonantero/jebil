@@ -2393,6 +2393,10 @@
   white-space: pre-line;
 }
 
+.orcamento-estimated-time {
+  grid-column: 2;
+}
+
 .requested-items-panel {
   gap: 10px;
 }
@@ -5545,6 +5549,10 @@
   .summary-grid,
   .orcamento-resumo-grid {
     grid-template-columns: 1fr;
+  }
+
+  .orcamento-estimated-time {
+    grid-column: auto;
   }
 
   .auth-reference-shell {

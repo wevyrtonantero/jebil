@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { createCliente, listClientes, updateCliente } from "../services/clienteService";
+import { createCliente, getClienteById, listClientes, updateCliente } from "../services/clienteService";
 import { listAtendimentos } from "../services/atendimentoService";
 import {
   createMotocicleta,
@@ -198,25 +198,27 @@ function ClientesPage() {
     setError("");
 
     try {
-      const [motosData, atendimentosData] = await Promise.all([
+      const [clienteCompleto, motosData] = await Promise.all([
+        getClienteById(cliente.id),
         listMotocicletasByCliente(cliente.id),
-        listAtendimentos({
-          cliente_cpf: cliente.cpf || undefined,
-          cliente_nome: cliente.cpf ? undefined : cliente.nome,
-        }),
       ]);
+      const atendimentosData = await listAtendimentos({
+        cliente_cpf: clienteCompleto.cpf || undefined,
+        cliente_nome: clienteCompleto.cpf ? undefined : clienteCompleto.nome,
+      });
+      const clienteAtualizado = { ...cliente, ...clienteCompleto };
 
-      setSelectedCliente(cliente);
+      setSelectedCliente(clienteAtualizado);
       setClienteForm({
-        nome: cliente.nome || "",
-        telefone: cliente.telefone || "",
-        cpf: cliente.cpf || "",
-        observacoes: cliente.observacoes || "",
+        nome: clienteAtualizado.nome || "",
+        telefone: clienteAtualizado.telefone || "",
+        cpf: clienteAtualizado.cpf || "",
+        observacoes: clienteAtualizado.observacoes || "",
       });
       setMotos(motosData.filter((item) => item.ativo));
       setHistorico(
         atendimentosData
-          .filter((item) => item.cliente_id === cliente.id || item.cliente_nome === cliente.nome)
+          .filter((item) => item.cliente_id === clienteAtualizado.id || item.cliente_nome === clienteAtualizado.nome)
           .sort((a, b) => new Date(b.finalizado_em || b.entrada_em) - new Date(a.finalizado_em || a.entrada_em)),
       );
     } catch (requestError) {
