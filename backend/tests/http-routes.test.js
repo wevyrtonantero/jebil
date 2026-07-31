@@ -893,6 +893,46 @@ test("PATCH /api/v2/ordens-servico/:ordemId/items/:itemId/pagamento allows OFICI
   assert.equal(response.body.success, true);
 });
 
+test("PATCH /api/v2/ordens-servico/:ordemId/items/:itemId/pagamento allows RECEPCAO", async () => {
+  const token = signAccessToken({
+    sub: 18,
+    perfil: "RECEPCAO",
+    email: "recepcao@jebil.local",
+  });
+
+  usuarioRepository.findById = async () => ({
+    id: 18,
+    nome: "Recepcao",
+    email: "recepcao@jebil.local",
+    perfil: "RECEPCAO",
+    ativo: true,
+  });
+
+  ordemServicoV2Service.updateItemPagamento = async (_ordemId, _itemId, pagamentoStatus, currentUser, observacao) => {
+    assert.equal(pagamentoStatus, "PAGO");
+    assert.equal(currentUser.perfil, "RECEPCAO");
+    assert.equal(observacao, "Pagamento confirmado pela recepcao durante o servico rapido.");
+
+    return {
+      id: 9,
+      numero_os: "OS-2026-000918",
+      items: [{ id: 92, pagamento_status: pagamentoStatus }],
+    };
+  };
+
+  const response = await request(app)
+    .patch("/api/v2/ordens-servico/9/items/92/pagamento")
+    .set("Authorization", `Bearer ${token}`)
+    .send({
+      pagamento_status: "PAGO",
+      observacao: "Pagamento confirmado pela recepcao durante o servico rapido.",
+    });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.success, true);
+  assert.equal(response.body.data.items[0].pagamento_status, "PAGO");
+});
+
 test("POST /api/v2/ordens-servico/:ordemId/diagnosticos allows OFICINA", async () => {
   const token = signAccessToken({
     sub: 16,
