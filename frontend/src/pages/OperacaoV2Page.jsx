@@ -7,7 +7,7 @@ import { listMecanicos } from "../services/mecanicoService";
 import {
   adicionarServicoRapidoV2,
   atribuirExecucaoV2,
-  cancelarServicoRapidoV2,
+  cancelarOrdemServicoV2,
   concluirDiagnosticoV2,
   createDiagnosticoV2,
   getOrdemServicoV2,
@@ -816,13 +816,13 @@ function OperacaoV2Page() {
     }
   }
 
-  async function handleCancelarServicoRapido() {
-    if (!selectedOrder || !isAtendimentoRapido(selectedOrder)) {
+  async function handleCancelarAtendimento() {
+    if (!selectedOrder) {
       return;
     }
 
     const confirmed = window.confirm(
-      "Cancelar este servico rapido?\n\nA ordem sera cancelada e saira da oficina. Ela nao sera arquivada e nao voltara para a recepcao.",
+      "Cancelar este atendimento?\n\nA ordem e todos os servicos ativos serao cancelados e sairao da oficina. O historico sera mantido.",
     );
 
     if (!confirmed) {
@@ -833,15 +833,15 @@ function OperacaoV2Page() {
     setError("");
 
     try {
-      await cancelarServicoRapidoV2(selectedOrder.id, {
-        motivo: "Desistencia do servico rapido informada pelo mecanico na operacao.",
+      await cancelarOrdemServicoV2(selectedOrder.id, {
+        motivo: "Cancelamento do atendimento informado pela operacao.",
       });
       setDetailOpen(false);
       setSelectedOrder(null);
       await loadOrdens();
-      setFeedback("Servico rapido cancelado. A ordem saiu da producao.");
+      setFeedback("Atendimento cancelado. A ordem saiu da producao.");
     } catch (requestError) {
-      setError(requestError?.response?.data?.message || "Nao foi possivel cancelar o servico rapido.");
+      setError(requestError?.response?.data?.message || "Nao foi possivel cancelar o atendimento.");
     } finally {
       setBusy(false);
     }
@@ -1217,14 +1217,14 @@ function OperacaoV2Page() {
         subtitle={selectedOrder ? `${selectedOrder.motocicleta_modelo} - ${selectedOrder.motocicleta_placa || "Sem placa"}` : ""}
         size="large"
         headerActions={
-          !isReceptionMode && selectedOrder && isAtendimentoRapido(selectedOrder) && !isDiagnosticOrder(selectedOrder) ? (
+          !isReceptionMode && selectedOrder ? (
             <button
               type="button"
-              className="icon-button operacao-cancel-quick-button"
-              onClick={() => void handleCancelarServicoRapido()}
+              className="icon-button operacao-cancel-order-button"
+              onClick={() => void handleCancelarAtendimento()}
               disabled={busy}
-              aria-label="Cancelar servico rapido"
-              title="Cancelar servico rapido"
+              aria-label="Cancelar atendimento"
+              title="Cancelar atendimento"
             >
               <AppIcon name="trash" size={18} />
             </button>

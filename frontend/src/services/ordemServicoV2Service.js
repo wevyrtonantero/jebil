@@ -128,6 +128,11 @@ async function cancelarServicoRapidoV2(ordemId, payload = {}) {
   return response.data.data;
 }
 
+async function cancelarOrdemServicoV2(ordemId, payload = {}) {
+  const response = await api.patch(`/v2/ordens-servico/${ordemId}/cancelar`, payload);
+  return response.data.data;
+}
+
 async function updateItemStatusV2(ordemId, itemId, statusItem, observacao = null) {
   const response = await api.patch(`/v2/ordens-servico/${ordemId}/items/${itemId}/status`, {
     status_item: statusItem,
@@ -194,6 +199,7 @@ export {
   atribuirExecucaoV2,
   adicionarServicoRapidoV2,
   cancelarServicoRapidoV2,
+  cancelarOrdemServicoV2,
   updateItemStatusV2,
   updateItemAutorizacaoV2,
   updateItemPagamentoV2,

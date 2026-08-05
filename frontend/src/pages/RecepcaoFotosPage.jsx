@@ -84,26 +84,6 @@ function buildReceiptContractData(ordem, signedAt = new Date()) {
   };
 }
 
-function buildWhatsappReceiptExcerpt(ordem) {
-  const receipt = ordem?.assinatura_recebimento;
-  const pdfUrl = getPublicAssetUrl(receipt?.pdf_url);
-
-  if (!receipt) {
-    return "";
-  }
-
-  return [
-    "",
-    "Resumo do aceite registrado:",
-    `OS ${receipt.numero_os || ordem.numero_os}`,
-    `Assinado em ${formatDateTime(receipt.assinado_em)}`,
-    pdfUrl ? `PDF do contrato: ${pdfUrl}` : null,
-    "Cliente ciente do recebimento das fotos e da possivel cobranca de diagnostico/orcamento.",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
 function RecepcaoFotosPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -274,14 +254,13 @@ function RecepcaoFotosPage() {
       .trim();
 
     return [
-      `Ola, ${ordem.cliente_nome}.`,
-      "Muito obrigado pela preferencia e pela confianca em nosso atendimento.",
-      `Entraremos em contato o mais breve possivel para encaminhar o orcamento da sua motocicleta ${motoIdentificacao}.`,
+      `Olá, ${ordem.cliente_nome}.`,
+      "Muito obrigado pela preferência e pela confiança em nosso atendimento.",
+      `Entraremos em contato o mais breve possível para encaminhar o orçamento da sua motocicleta ${motoIdentificacao}.`,
       "As fotos da moto registradas no ato da entrega seguem abaixo para seu acompanhamento.",
-      ordem.buscar_moto && ordem.endereco_retirada ? `Tambem registramos a solicitacao de busca da moto no endereco informado: ${ordem.endereco_retirada}.` : null,
-      "Caso opte por nao realizar o servico, podera ser cobrado o valor referente a analise de diagnostico.",
-      buildWhatsappReceiptExcerpt(ordem),
-      "Permanecemos a disposicao.",
+      ordem.buscar_moto && ordem.endereco_retirada ? `Também registramos a solicitação de busca da moto no endereço informado: ${ordem.endereco_retirada}.` : null,
+      "Caso opte por realizar ou não realizar o serviço, poderá ser cobrado o valor referente à análise de diagnóstico.",
+      "Permanecemos à disposição.",
     ]
       .filter(Boolean)
       .join("\n");
