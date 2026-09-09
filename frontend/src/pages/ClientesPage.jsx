@@ -32,6 +32,7 @@ const initialClienteForm = {
 const initialMotoForm = {
   marca: "",
   modelo: "",
+  ano: "",
   cor: "",
   placa: "",
   km: "",
@@ -303,6 +304,7 @@ function ClientesPage() {
         ? {
             marca: moto.marca || "",
             modelo: moto.modelo || "",
+            ano: moto.ano || "",
             cor: moto.cor || "",
             placa: moto.placa || "",
             km: moto.km || "",
@@ -326,6 +328,7 @@ function ClientesPage() {
         cliente_id: selectedCliente.id,
         marca: motoForm.marca || null,
         modelo: motoForm.modelo,
+        ano: motoForm.ano || null,
         cor: motoForm.cor || null,
         placa: motoForm.placa,
         km: motoForm.km || null,
@@ -600,7 +603,11 @@ function ClientesPage() {
                     {moto.modelo}
                   </strong>
                   <p>{moto.placa || "Sem placa"}</p>
-                  <small>{moto.cor || "Sem cor"}{moto.km ? ` • ${moto.km} km` : ""}</small>
+                  <small>
+                    {moto.ano || "Ano nao informado"}
+                    {moto.cor ? ` • ${moto.cor}` : " • Sem cor"}
+                    {moto.km ? ` • ${moto.km} km` : ""}
+                  </small>
                 </div>
                 <div className="row-actions">
                   <button type="button" className="ghost-button" onClick={() => openMotoModal(moto)}>
@@ -721,10 +728,22 @@ function ClientesPage() {
             </label>
           </div>
 
-          <div className="field-grid two-up">
+          <div className="field-grid three-up">
             <label className="field-label">
               Placa
               <input value={motoForm.placa} onChange={(event) => setMotoForm((current) => ({ ...current, placa: formatPlate(event.target.value) }))} />
+            </label>
+            <label className="field-label">
+              Ano da moto
+              <input
+                type="number"
+                inputMode="numeric"
+                min="1950"
+                max={new Date().getFullYear() + 1}
+                placeholder="Ex.: 2024"
+                value={motoForm.ano}
+                onChange={(event) => setMotoForm((current) => ({ ...current, ano: event.target.value.replace(/\D/g, "").slice(0, 4) }))}
+              />
             </label>
             <label className="field-label">
               KM

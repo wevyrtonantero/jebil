@@ -1120,7 +1120,7 @@ async function adicionarServicoRapido(ordemServicoId, payload, currentUser) {
   return data;
 }
 
-async function cancelarServicoRapido(ordemServicoId, payload, currentUser) {
+async function cancelarOrdemServico(ordemServicoId, payload, currentUser) {
   const data = await db.transaction(async (trx) => {
     const ordem = await ordemServicoV2Repository.findById(ordemServicoId, trx);
 
@@ -1134,11 +1134,7 @@ async function cancelarServicoRapido(ordemServicoId, payload, currentUser) {
 
     const items = await itemOrdemServicoV2Repository.listByOrdemServicoId(ordemServicoId, trx);
 
-    if (!isAtendimentoRapidoOrdem(ordem, items)) {
-      throw new ApiError(400, "Cancelamento direto pela operacao esta liberado apenas para servico rapido.");
-    }
-
-    const motivo = payload.motivo || "Desistencia do servico rapido informada pela operacao.";
+    const motivo = payload.motivo || "Cancelamento do atendimento informado pela operacao.";
     const activeItems = items.filter((item) => item.status_item !== "CANCELADO");
 
     for (const item of activeItems) {
@@ -1150,7 +1146,7 @@ async function cancelarServicoRapido(ordemServicoId, payload, currentUser) {
       await appendHistoricoItem(trx, {
         itemOrdemServicoId: item.id,
         usuarioId: currentUser.id,
-        acao: "SERVICO_RAPIDO_CANCELADO",
+        acao: "ATENDIMENTO_CANCELADO",
         statusItemAnterior: item.status_item,
         statusItemNovo: "CANCELADO",
         autorizacaoAnterior: item.autorizacao_status,
@@ -1168,11 +1164,13 @@ async function cancelarServicoRapido(ordemServicoId, payload, currentUser) {
         )
       : [];
 
-    if (execucoes.length) {
+    const execucoesAtivas = execucoes.filter((execucao) => !["CONCLUIDA", "CANCELADA"].includes(execucao.status_execucao));
+
+    if (execucoesAtivas.length) {
       await trx("execucoes")
         .whereIn(
           "id",
-          execucoes.map((execucao) => execucao.id),
+          execucoesAtivas.map((execucao) => execucao.id),
         )
         .update({
           status_execucao: "CANCELADA",
@@ -1183,13 +1181,32 @@ async function cancelarServicoRapido(ordemServicoId, payload, currentUser) {
       await trx("execucao_mecanicos")
         .whereIn(
           "execucao_id",
-          execucoes.map((execucao) => execucao.id),
+          execucoesAtivas.map((execucao) => execucao.id),
         )
         .where({ status_participacao: "ATIVA" })
         .update({
           status_participacao: "CANCELADA",
           finalizado_em: db.fn.now(),
         });
+    }
+
+    await trx("diagnosticos")
+      .where({ ordem_servico_id: ordemServicoId })
+      .whereIn("status_diagnostico", ["ABERTO", "EM_ANDAMENTO"])
+      .update({
+        status_diagnostico: "CANCELADO",
+        concluido_em: db.fn.now(),
+        atualizado_em: db.fn.now(),
+      });
+
+    if (activeItems.length) {
+      await trx("previsoes_pecas")
+        .whereIn(
+          "item_ordem_servico_id",
+          activeItems.map((item) => item.id),
+        )
+        .where({ status_previsao: "ATIVA" })
+        .update({ status_previsao: "CANCELADA" });
     }
 
     const atualizada = await ordemServicoV2Repository.updateFields(trx, ordemServicoId, {
@@ -1221,7 +1238,7 @@ async function cancelarServicoRapido(ordemServicoId, payload, currentUser) {
     await appendHistoricoOrdemServico(trx, {
       ordemServicoId,
       usuarioId: currentUser.id,
-      acao: "SERVICO_RAPIDO_CANCELADO",
+      acao: "ATENDIMENTO_CANCELADO",
       statusAnterior: ordem.status_geral,
       statusNovo: "CANCELADA",
       observacao: motivo,
@@ -1234,8 +1251,12 @@ async function cancelarServicoRapido(ordemServicoId, payload, currentUser) {
 
   emitSocketEvent("atendimento:cancelado", { ordemServicoId });
   emitSocketEvent("fila:atualizada", {});
-  emitV2Updated(ordemServicoId, { tipo: "servico_rapido_cancelado" });
+  emitV2Updated(ordemServicoId, { tipo: "atendimento_cancelado" });
   return data;
+}
+
+async function cancelarServicoRapido(ordemServicoId, payload, currentUser) {
+  return cancelarOrdemServico(ordemServicoId, payload, currentUser);
 }
 
 async function atribuirExecucao(ordemServicoId, itemId, payload, currentUser) {
@@ -2349,5 +2370,6 @@ module.exports = {
   retomarItemDaPeca,
   adicionarServicoRapido,
   cancelarServicoRapido,
+  cancelarOrdemServico,
   atribuirExecucao,
 };
