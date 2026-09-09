@@ -834,7 +834,9 @@ function OperacaoV2Page() {
 
     try {
       await cancelarOrdemServicoV2(selectedOrder.id, {
-        motivo: "Cancelamento do atendimento informado pela operacao.",
+        motivo: isReceptionMode
+          ? "Cancelamento do atendimento informado pela recepcao."
+          : "Cancelamento do atendimento informado pela operacao.",
       });
       setDetailOpen(false);
       setSelectedOrder(null);
@@ -1217,7 +1219,7 @@ function OperacaoV2Page() {
         subtitle={selectedOrder ? `${selectedOrder.motocicleta_modelo} - ${selectedOrder.motocicleta_placa || "Sem placa"}` : ""}
         size="large"
         headerActions={
-          !isReceptionMode && selectedOrder ? (
+          selectedOrder ? (
             <button
               type="button"
               className="icon-button operacao-cancel-order-button"
